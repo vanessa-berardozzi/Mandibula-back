@@ -19,7 +19,7 @@ npm install
   npm run dev
   ```
 
-Le serveur écoute par défaut sur http://localhost:3000 (modifiable via la variable d'environnement `PORT`).
+Le serveur écoute par défaut sur http://localhost:5000 (modifiable via la variable d'environnement `PORT`).
 
 ## Structure du projet
 

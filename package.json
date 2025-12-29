@@ -6,13 +6,16 @@
     "build": "tsc",
     "start": "node ./dist/index.js",
     "dev": "nodemon --watch src --exec ts-node src/index.ts",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy", 
     "prisma:db:push": "prisma db push",
     "prisma:db:seed": "prisma db seed",
     "prisma:studio": "prisma studio"
-
   },
   "dependencies": {
     "@prisma/client": "^7.2.0",
@@ -26,7 +29,11 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.0.3",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
     "nodemon": "^3.1.11",
+    "prettier": "^3.2.5",
     "prisma": "^7.2.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

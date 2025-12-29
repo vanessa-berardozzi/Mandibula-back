@@ -1,0 +1,179 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ENUMS
+enum Role {
+  USER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  SUM_UP
+  PAYPAL
+  BANK_TRANSFER
+  CASH
+}
+
+enum StockStatus {
+  IN_STOCK
+  LOW_STOCK
+  OUT_OF_STOCK
+}
+
+// MODELS
+
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  name             String?
+  password         String
+  pictureProfile   String?
+  lastConnection   DateTime?
+  role             Role      @default(USER)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  sessions         Session[]
+  orders           Order[]
+  adresses         Adress[]
+}
+
+model Adress {
+  id          String  @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+
+  street      String
+  city        String
+  state       String
+  postalCode  String
+  country     String
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Session {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+
+  token      String   @unique
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  image       String?
+  isActive    Boolean   @default(true)
+
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  images      String[]
+
+  // Attributs JSON flexibles par catégorie
+  attributes  Json?
+
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+
+  // Stock management
+  stockInfo   StockInfo?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orderItems  OrderItem[]
+}
+
+model StockInfo {
+  id            String      @id @default(uuid())
+  productId     String      @unique
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  quantity      Int         @default(0)
+  minThreshold  Int         @default(5)  // Seuil pour LOW_STOCK
+  status        StockStatus @default(IN_STOCK)
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  movements     StockMovement[]
+}
+
+model StockMovement {
+  id          String   @id @default(uuid())
+  stockId     String
+  stock       StockInfo @relation(fields: [stockId], references: [id], onDelete: Cascade)
+
+  type        String   // "IN", "OUT", "ADJUSTMENT"
+  quantity    Int
+  reason      String?  // "Purchase", "Return", "Damage", etc.
+
+  createdAt   DateTime @default(now())
+}
+
+
+model Order {
+  id                String      @id @default(uuid())
+  userId            String
+  user              User        @relation(fields: [userId], references: [id])
+
+  status            OrderStatus @default(PENDING)
+  total             Decimal     @db.Decimal(10, 2)
+  tax               Decimal?    @db.Decimal(10, 2)
+
+  billingAddress    String?
+  shippingAddress   String?
+  paymentMethod     PaymentMethod
+
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  orderItems        OrderItem[]
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  quantity  Int
+  price     Decimal @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+}

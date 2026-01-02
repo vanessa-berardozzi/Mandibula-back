@@ -1,6 +1,6 @@
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
-import createError from 'http-errors';
+import createError, { HttpError } from 'http-errors';
 
 import indexRouter from './routes/index';
 import usersRouter from './routes/users';
@@ -31,7 +31,7 @@ app.use((req, res, next) => {
 });
 
 // error handler
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+app.use((err: HttpError, req: Request, res: Response, _next: NextFunction) => {
   res.status(err.status || 500);
   res.json({
     message: err.message,

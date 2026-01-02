@@ -3,6 +3,14 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+
+# pnpm
+.pnpm-store/
+.pnpm-debug.log
+
+# Prisma generated client
+prisma/generated/
 
 #perso/dev
 docPerso

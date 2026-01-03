@@ -1,38 +1,38 @@
-import js from '@eslint/js';
-import tseslint from 'typescript-eslint';
+import js from "@eslint/js";
+import tseslint from "typescript-eslint";
 
 export default [
   {
-    ignores: ['node_modules', 'dist', '.pnpm-store'],
+    ignores: ["node_modules", "dist", ".pnpm-store"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
     languageOptions: {
-      ecmaVersion: 'latest',
-      sourceType: 'module',
+      ecmaVersion: "latest",
+      sourceType: "module",
       globals: {
         node: true,
       },
     },
     rules: {
-      '@typescript-eslint/explicit-function-return-types': 'off',
-      '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': [
-        'error',
+      "@typescript-eslint/explicit-function-return-types": "off",
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
         {
-          argsIgnorePattern: '^_',
+          argsIgnorePattern: "^_",
         },
       ],
       // Autoriser console.log pour le dev
-      'no-console': [
-        'warn',
+      "no-console": [
+        "warn",
         {
-          allow: ['log', 'warn', 'error'],
+          allow: ["log", "warn", "error"],
         },
       ],
-      semi: ['error', 'always'],
-      quotes: ['error', 'single'],
+      semi: ["error", "always"],
+      quotes: ["error", "double", "single"],
     },
   },
 ];

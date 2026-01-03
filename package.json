@@ -2,7 +2,6 @@
   "name": "mandibula-back",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "node ./dist/index.js",
@@ -19,6 +18,7 @@
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
     "better-auth": "^1.4.10",
     "cors": "^2.8.5",
@@ -42,5 +42,6 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.51.0"
+  
   }
 }

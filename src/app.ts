@@ -1,7 +1,9 @@
+import { toNodeHandler } from 'better-auth/node';
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import createError, { HttpError } from 'http-errors';
 
+import { auth } from './lib/auth';
 import indexRouter from './routes/index';
 import usersRouter from './routes/users';
 
@@ -20,6 +22,14 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+// Better Auth handler - mount before other routes
+app.use('/api/auth', toNodeHandler(auth));
+
+// Test route to verify auth is mounted
+app.get('/api/test', (req, res) => {
+  res.json({ message: 'API is working!', timestamp: new Date().toISOString() });
+});
 
 // Routes
 app.use('/', indexRouter);

@@ -24,7 +24,7 @@ Le serveur écoute par défaut sur http://localhost:5000 (modifiable via la vari
 ## Structure du projet
 
 - `index.js` : point d'entrée, lance le serveur.
-- `app.js` : configuration Express, middlewares, routes, gestion des erreurs.
+- `server.js` : configuration Express, middlewares, routes, gestion des erreurs.
 - `routes/` : routes de l'API.
 - `node_modules/` : dépendances (non versionnées).
 
@@ -32,7 +32,7 @@ Le serveur écoute par défaut sur http://localhost:5000 (modifiable via la vari
 
 Créer un fichier `.env` à la racine si besoin, par exemple :
 ```
-PORT=3000
+PORT=3001
 ```
 
 ## Bonnes pratiques

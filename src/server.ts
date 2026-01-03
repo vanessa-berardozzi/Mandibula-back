@@ -1,11 +1,12 @@
-import { toNodeHandler } from 'better-auth/node';
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import createError, { HttpError } from 'http-errors';
 
-import { auth } from './lib/auth';
+import { authLimiter, globalLimiter } from './middleware/rateLimiter';
+import authRouter from './routes/auth'; // ← Route custom avec validation Zod
 import indexRouter from './routes/index';
-import usersRouter from './routes/users';
+import protectedRouter from './routes/protected';
+
 
 const app = express();
 
@@ -23,8 +24,13 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Better Auth handler - mount before other routes
-app.use('/api/auth', toNodeHandler(auth));
+// Rate limiting global (optionnel en dev)
+if (process.env.NODE_ENV === 'production') {
+  app.use(globalLimiter);
+}
+
+// Better Auth handler avec validation Zod et rate limiting
+app.use('/api/auth', authLimiter, authRouter);
 
 // Test route to verify auth is mounted
 app.get('/api/test', (req, res) => {
@@ -33,7 +39,7 @@ app.get('/api/test', (req, res) => {
 
 // Routes
 app.use('/', indexRouter);
-app.use('/users', usersRouter);
+app.use('/api', protectedRouter); // Routes protégées (/api/me, /api/admin/...)
 
 // catch 404 and forward to error handler
 app.use((req, res, next) => {

@@ -58,11 +58,10 @@ export const auth = betterAuth({
   },
 
   // Sécurité
-  secret: process.env.BETTER_AUTH_SECRET,
+  secret: process.env.BETTER_AUTH_SECRET!,
   trustedOrigins: [
-    process.env.BETTER_AUTH_URL || 'http://localhost:3002',
-    'http://localhost:3000', // Frontend React/Next.js
-    'http://localhost:3002', // Backend
+    process.env.BETTER_AUTH_URL || 'http://localhost:3001',
+    process.env.CORS_ORIGIN || 'http://localhost:3000',
   ],
 });
 

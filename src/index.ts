@@ -4,12 +4,13 @@ import app from './server';
 // Load env variables
 dotenv.config();
 
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT;
 
 // Start server
 const server = app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`⏱️  Rate limiting: ${process.env.NODE_ENV === 'production' ? 'ENABLED' : 'DISABLED (dev)'}`);
 });
 
 // Handle errors

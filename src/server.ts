@@ -1,12 +1,10 @@
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import createError, { HttpError } from 'http-errors';
-
 import { authLimiter, globalLimiter } from './middleware/rateLimiter';
-import authRouter from './routes/auth'; // ← Route custom avec validation Zod
+import authRouter from './routes/auth';
 import indexRouter from './routes/index';
 import protectedRouter from './routes/protected';
-
 
 const app = express();
 
@@ -17,7 +15,7 @@ app.use(express.urlencoded({ extended: false }));
 // CORS configuration
 const corsOptions = {
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-  credentials: true,
+  credentials: true, // Requis pour cookies Better Auth
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
@@ -51,7 +49,7 @@ app.use((err: HttpError, req: Request, res: Response, _next: NextFunction) => {
   res.status(err.status || 500);
   res.json({
     message: err.message,
-    error: req.app.get('env') === 'development' ? err : {}
+    error: req.app.get('env') === 'development' ? err : {},
   });
 });
 

@@ -3,7 +3,7 @@ import type { User as BetterAuthUser, Session } from '../lib/auth';
 
 // Étendre le User de Better Auth avec notre champ role personnalisé
 export interface User extends BetterAuthUser {
-  role: 'USER' | 'ADMIN' ;
+  role: 'USER' | 'ADMIN';
 }
 
 // Réexporter Session
@@ -31,5 +31,4 @@ export interface AuthResponse {
 export interface AuthRequest {
   user?: User;
   session?: Session;
-
 }

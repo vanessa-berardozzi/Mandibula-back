@@ -32,7 +32,7 @@ Le serveur écoute par défaut sur http://localhost:5000 (modifiable via la vari
 
 Créer un fichier `.env` à la racine si besoin, par exemple :
 ```
-PORT=3001
+PORT=3002
 ```
 
 ## Bonnes pratiques

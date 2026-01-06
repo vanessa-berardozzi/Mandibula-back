@@ -38,14 +38,22 @@ export const auth = betterAuth({
   advanced: {
     ipAddress: {
       // Headers pour récupérer l'IP réelle (derrière proxy/Cloudflare)
-      ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'],
+      // En dev local, Express utilise req.ip directement
+      ipAddressHeaders: ['x-forwarded-for', 'cf-connecting-ip', 'x-real-ip'],
     },
   },
 
-  // Rate limiting Better Auth (en plus de express-rate-limit)
+  // Rate limiting Better Auth (natif, stocké en BDD)
   rateLimit: {
-    window: 10, // 10 secondes
-    max: 100, // 100 requêtes max
+    enabled: true,
+    window: 900, // 15 minutes (en secondes)
+    max: 5, // 5 requêtes max
+    storage: 'database',
+    modelName: 'rateLimit', // Nom exact du modèle Prisma
+    customRules: {
+      '/sign-up/email': { window: 900, max: 5 },
+      '/sign-in/email': { window: 900, max: 5 },
+    },
   },
 
   // OAuth providers (Discord pour l'instant)
@@ -60,7 +68,7 @@ export const auth = betterAuth({
   // Sécurité
   secret: process.env.BETTER_AUTH_SECRET!,
   trustedOrigins: [
-    process.env.BETTER_AUTH_URL || 'http://localhost:3001',
+    process.env.BETTER_AUTH_URL || 'http://localhost:3002',
     process.env.CORS_ORIGIN || 'http://localhost:3000',
   ],
 });
@@ -71,5 +79,3 @@ export const auth = betterAuth({
  */
 export type Session = typeof auth.$Infer.Session.session;
 export type User = typeof auth.$Infer.Session.user;
-
-export default auth;

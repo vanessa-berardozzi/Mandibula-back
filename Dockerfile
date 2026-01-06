@@ -1,13 +1,19 @@
-# Dockerfile pour ton backend Node.js
-FROM node:22-alpine
+FROM node:25.2-alpine
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci
+RUN npm install -g pnpm
+
+COPY package*.json pnpm-lock.yaml ./
+RUN pnpm install
+
+# Copie le schéma Prisma avant la génération
+COPY prisma ./prisma
+
+RUN pnpm prisma generate
 
 COPY . .
-RUN npm run build
+RUN pnpm run build
 
-EXPOSE 3001
+EXPOSE 3001 
 
-CMD ["npm", "start"]
+CMD ["pnpm", "start"]

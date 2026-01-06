@@ -1,12 +1,14 @@
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import createError, { HttpError } from 'http-errors';
-import { authLimiter, globalLimiter } from './middleware/rateLimiter';
 import authRouter from './routes/auth';
 import indexRouter from './routes/index';
 import protectedRouter from './routes/protected';
 
 const app = express();
+
+// Trust proxy pour récupérer la vraie IP (nécessaire pour rate limiting)
+app.set('trust proxy', true);
 
 // Middleware
 app.use(express.json());
@@ -22,13 +24,8 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Rate limiting global (optionnel en dev)
-if (process.env.NODE_ENV === 'production') {
-  app.use(globalLimiter);
-}
-
-// Better Auth handler avec validation Zod et rate limiting
-app.use('/api/auth', authLimiter, authRouter);
+// Better Auth (avec rate limiting natif en base de données)
+app.use('/api/auth', authRouter);
 
 // Test route to verify auth is mounted
 app.get('/api/test', (req, res) => {

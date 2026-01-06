@@ -1,33 +1,21 @@
 # backend/docker-compose.yml
 services:
-  app:
-    build: .
-    env_file:
-      - .env
-    ports:
-      - "3001:3001"
-    depends_on:
-      - postgres
-      - redis
-
   postgres:
+    container_name: postgres-postgres-1
     image: postgres:18-alpine
-    env_file:
-      - .env
+    environment:
+      POSTGRES_USER: mandibula
+      POSTGRES_PASSWORD: isopodes
+      POSTGRES_DB: mandibula
     ports:
-      - "5435:5432"
+      - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres-dbs:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL","pg_isready -U isopodes_user"]
+      test: ["CMD-SHELL", "pg_isready -U mandibula"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:alpine
-    ports:
-      - "6379:6379"
-
 volumes:
-  postgres_data:
+  postgres-dbs:

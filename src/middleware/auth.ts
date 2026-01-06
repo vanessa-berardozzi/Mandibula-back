@@ -1,86 +1,105 @@
-import { NextFunction, Request, Response } from 'express';
-import type { Session, User } from '../lib/auth';
+/* eslint-disable @typescript-eslint/no-namespace */
+import type { NextFunction, Request, Response } from 'express';
 import { auth } from '../lib/auth';
 
-// Étendre Express Request pour inclure user et session
+// Étendre Express Request pour inclure user et session Better Auth
+ 
 declare global {
   namespace Express {
     interface Request {
-      user?: User;
-      session?: Session;
+      user?: typeof auth.$Infer.Session.user;
+      session?: typeof auth.$Infer.Session.session;
     }
   }
 }
 
 /**
- * Middleware: Vérifier la session Better Auth
- * Ajoute req.user et req.session si authentifié
+ * Middleware d'authentification Better Auth (2026)
+ * Vérifie la session via cookies httpOnly et bloque si non authentifié
+ * @throws 401 si session invalide ou absente
  */
-export async function authMiddleware(
+export const authMiddleware = async (
   req: Request,
   res: Response,
   next: NextFunction
-): Promise<void> {
+): Promise<void> => {
   try {
-    // Better Auth récupère la session depuis les cookies automatiquement
     const session = await auth.api.getSession({
-      headers: req.headers as any,
-      query: req.query as any,
-      body: req.body as any,
+      headers: req.headers,
     });
 
     if (!session) {
-      res.status(401).json({ error: 'Non authentifié' });
+      res.status(401).json({ 
+        error: 'Non authentifié',
+        code: 'UNAUTHORIZED' 
+      });
       return;
     }
 
-    // Ajouter user et session à la requête
+    // Attacher user et session à la requête
     req.user = session.user;
     req.session = session.session;
-
+    
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error);
-    res.status(401).json({ error: 'Non authentifié' });
+    console.error('[Auth Middleware] Erreur:', error);
+    res.status(401).json({ 
+      error: 'Session invalide',
+      code: 'INVALID_SESSION' 
+    });
   }
-}
+};
 
 /**
- * Middleware: Vérifier que l'utilisateur est ADMIN
+ * Middleware de vérification du rôle ADMIN
+ * Doit être utilisé APRÈS authMiddleware
+ * @throws 403 si l'utilisateur n'est pas admin
  */
-export async function adminMiddleware(
+export const adminMiddleware = async (
   req: Request,
   res: Response,
   next: NextFunction
-): Promise<void> {
-  if (!req.user || req.user.role !== 'ADMIN') {
-    res.status(403).json({ error: 'Forbidden - Admin access required' });
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ 
+      error: 'Non authentifié',
+      code: 'UNAUTHORIZED' 
+    });
     return;
   }
+
+  if (req.user.role !== 'ADMIN') {
+    res.status(403).json({ 
+      error: 'Accès refusé - Droits administrateur requis',
+      code: 'FORBIDDEN' 
+    });
+    return;
+  }
+  
   next();
-}
+};
 
 /**
- * Middleware optionnel: Ajoute user/session si présent, mais ne bloque pas
+ * Middleware optionnel qui ajoute user/session si disponible
+ * Ne bloque jamais la requête (utile pour routes publiques avec auth optionnelle)
  */
-export async function optionalAuthMiddleware(
+export const optionalAuthMiddleware = async (
   req: Request,
   res: Response,
   next: NextFunction
-): Promise<void> {
+): Promise<void> => {
   try {
     const session = await auth.api.getSession({
-      headers: req.headers as any,
+      headers: req.headers,
     });
-
+    
     if (session) {
       req.user = session.user;
       req.session = session.session;
     }
-
-    next();
-  } catch (error) {
-    // Ignorer les erreurs, continuer sans auth
-    next();
+  } catch {
+    // Ignorer silencieusement les erreurs d'auth
   }
-}
+  
+  next();
+};

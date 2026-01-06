@@ -111,6 +111,15 @@ model Verification {
   @@map("verification")
 }
 
+model rateLimit {
+  id          String @id @default(uuid())
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+
+  @@map("rateLimit")
+}
+
 model Adress {
   id     String @id @default(uuid())
   userId String

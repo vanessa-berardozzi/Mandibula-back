@@ -32,7 +32,7 @@ export default [
         },
       ],
       semi: ['error', 'always'],
-      quotes: ['error', 'single', { avoidEscape: true }],
+      quotes: ['error', 'single', 'double', { avoidEscape: true }],
     },
   },
 ];

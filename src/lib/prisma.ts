@@ -1,6 +1,5 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
-import 'dotenv/config';
 
 // Vérifier que DATABASE_URL est définie
 if (!process.env.DATABASE_URL) {
@@ -8,7 +7,14 @@ if (!process.env.DATABASE_URL) {
 }
 
 const connectionString = process.env.DATABASE_URL;
-const adapter = new PrismaPg({ connectionString });
+
+// pg (node-postgres) ne lit pas sslmode=require depuis la connection string —
+// il faut passer ssl explicitement pour Neon/hébergeurs distants
+const isRemote = process.env.NODE_ENV !== 'development';
+const adapter = new PrismaPg({
+  connectionString,
+  ssl: isRemote ? { rejectUnauthorized: false } : undefined,
+});
 
 /**
  * Instance Prisma Client avec adapter PostgreSQL

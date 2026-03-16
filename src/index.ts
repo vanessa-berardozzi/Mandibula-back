@@ -1,8 +1,6 @@
-import dotenv from 'dotenv';
-import app from './server';
+import 'dotenv/config';
 
-// Load env variables
-dotenv.config();
+import app from './server';
 
 const PORT = process.env.PORT;
 

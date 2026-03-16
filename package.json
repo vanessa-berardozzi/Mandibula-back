@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "tsc",
+    "build": "prisma generate && tsc",
     "start": "cross-env NODE_ENV=production node ./dist/index.js",
     "dev": "cross-env NODE_ENV=development nodemon --watch src --exec ts-node src/index.ts",
     "staging": "cross-env NODE_ENV=staging node --require ./dist/env.js ./dist/index.js",

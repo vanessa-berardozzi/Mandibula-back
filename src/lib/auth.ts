@@ -99,8 +99,11 @@ export const auth = betterAuth({
   // Sécurité
   secret: process.env.BETTER_AUTH_SECRET!,
   trustedOrigins: [
-    process.env.BETTER_AUTH_URL || 'http://localhost:3002',
-    process.env.CORS_ORIGIN || 'http://localhost:3000',
+    process.env.BETTER_AUTH_URL ?? 'http://localhost:3002',
+    ...(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN ?? 'http://localhost:3000')
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean),
   ],
 });
 

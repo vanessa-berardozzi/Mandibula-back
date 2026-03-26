@@ -38,7 +38,7 @@ app.use(cors(corsOptions));
 
 // Middleware de redirection après OAuth vers le frontend
 app.get('/', (req, res, next) => {
-  // Si une session existe (cookie OAuth), rediriger vers le frontend home
+  // Si une session existe (cookie OAuth), rediriger vers le frontend
   const sessionToken = req.cookies?.['better-auth.session_token'];
   if (sessionToken) {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';

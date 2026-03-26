@@ -93,6 +93,7 @@ export const auth = betterAuth({
       clientId: process.env.DISCORD_CLIENT_ID as string,
       clientSecret: process.env.DISCORD_CLIENT_SECRET as string,
       enabled: !!process.env.DISCORD_CLIENT_ID,
+      redirectURI: process.env.DISCORD_REDIRECT_URI,
     },
   },
 
@@ -100,6 +101,7 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET!,
   trustedOrigins: [
     process.env.BETTER_AUTH_URL ?? 'http://localhost:3002',
+    process.env.FRONTEND_URL ?? 'http://localhost:3000',
     ...(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN ?? 'http://localhost:3000')
       .split(',')
       .map((o) => o.trim())

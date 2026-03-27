@@ -8,9 +8,12 @@ import { prisma } from './prisma';
  * Authentification avec :
  * - Email/password (validation côté Zod dans routes/auth.ts)
  * - Sessions sécurisées (cookies HttpOnly)
- * - Support OAuth Discord (optionnel)
+ * - Support OAuth Discord et Google
  */
 export const auth = betterAuth({
+  // baseURL doit être l'URL publique (frontend avec proxy), pas le backend direct
+  // Sinon le state OAuth ne correspond pas (state_mismatch)
+  baseURL: process.env.FRONTEND_URL || 'http://localhost:3000',
   database: prismaAdapter(prisma, {
     provider: 'postgresql',
   }),
@@ -87,26 +90,46 @@ export const auth = betterAuth({
     },
   },
 
-  // OAuth providers (Discord pour l'instant)
+  // OAuth providers
   socialProviders: {
     discord: {
       clientId: process.env.DISCORD_CLIENT_ID as string,
       clientSecret: process.env.DISCORD_CLIENT_SECRET as string,
       enabled: !!process.env.DISCORD_CLIENT_ID,
-      redirectURI: process.env.DISCORD_REDIRECT_URI,
+      // redirectURI auto-construit par Better Auth: baseURL/api/auth/callback/discord
+    },
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID as string,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+      enabled: !!process.env.GOOGLE_CLIENT_ID,
+      // redirectURI auto-construit par Better Auth: baseURL/api/auth/callback/google
     },
   },
 
-  // Sécurité
-  secret: process.env.BETTER_AUTH_SECRET!,
+  // Configuration de session
+  session: {
+    expiredIn: 7 * 24 * 60 * 60, // 7 days
+    updateAge: 24 * 60 * 60, // 24 hours
+    absoluteTimeout: 30 * 24 * 60 * 60, // 30 days
+    cookieCache: {
+      enabled: true,
+    },
+  },
+
+  // Sécurité - trusted origins pour cookies et CORS
   trustedOrigins: [
-    process.env.BETTER_AUTH_URL ?? 'http://localhost:3002',
-    process.env.FRONTEND_URL ?? 'http://localhost:3000',
-    ...(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN ?? 'http://localhost:3000')
+    'http://localhost:3000',
+    'http://localhost:3002',
+    process.env.FRONTEND_URL || 'http://localhost:3000',
+    process.env.BETTER_AUTH_URL || 'http://localhost:3002',
+    ...(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN ?? '')
       .split(',')
       .map((o) => o.trim())
       .filter(Boolean),
   ],
+
+  // Clé secrète Better Auth
+  secret: process.env.BETTER_AUTH_SECRET!,
 });
 
 /**

@@ -57,6 +57,14 @@ export const auth = betterAuth({
 
 
 
+  // Liaison automatique des comptes sociaux avec le même email
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ['google', 'discord', 'facebook'],
+    },
+  },
+
   // Champs custom User (role pour admin)
   user: {
     additionalFields: {
@@ -96,13 +104,16 @@ export const auth = betterAuth({
       clientId: process.env.DISCORD_CLIENT_ID as string,
       clientSecret: process.env.DISCORD_CLIENT_SECRET as string,
       enabled: !!process.env.DISCORD_CLIENT_ID,
-      // redirectURI auto-construit par Better Auth: baseURL/api/auth/callback/discord
     },
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID as string,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
       enabled: !!process.env.GOOGLE_CLIENT_ID,
-      // redirectURI auto-construit par Better Auth: baseURL/api/auth/callback/google
+    },
+    facebook: {
+      clientId: process.env.FACEBOOK_CLIENT_ID as string,
+      clientSecret: process.env.FACEBOOK_CLIENT_SECRET as string,
+      enabled: !!process.env.FACEBOOK_CLIENT_ID,
     },
   },
 

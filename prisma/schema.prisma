@@ -59,6 +59,7 @@ model User {
   orders    Order[]
   adresses  Adress[]
   accounts  Account[]
+  cart      Cart?
 
   @@map("user")
 }
@@ -170,6 +171,7 @@ model Product {
   updatedAt DateTime @updatedAt
 
   orderItems OrderItem[]
+  cartItems  CartItem[]
 }
 
 model StockInfo {
@@ -232,4 +234,39 @@ model OrderItem {
   price    Decimal @db.Decimal(10, 2)
 
   createdAt DateTime @default(now())
+}
+
+// Shopping Cart
+
+model Cart {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  items CartItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("cart")
+}
+
+model CartItem {
+  id       String @id @default(cuid())
+  cartId   String
+  cart     Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  quantity Int     @default(1)
+  price    Decimal @db.Decimal(10, 2) // Prix capturé au moment de l'ajout
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, productId])
+  @@index([productId])
+  @@map("cart_item")
 }

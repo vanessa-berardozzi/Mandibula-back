@@ -2,8 +2,10 @@ import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import createError, { HttpError } from 'http-errors';
 import authRouter from './routes/auth';
+import cartRouter from './routes/cart';
 import indexRouter from './routes/index';
 import protectedRouter from './routes/protected';
+
 
 const app = express();
 
@@ -58,6 +60,8 @@ app.get('/api/test', (req, res) => {
 // Routes
 app.use('/', indexRouter);
 app.use('/api', protectedRouter); // Routes protégées (/api/me, /api/admin/...)
+app.use('/api/cart', cartRouter); // Routes panier (protégées par authMiddleware)
+
 
 // catch 404 and forward to error handler
 app.use((req, res, next) => {

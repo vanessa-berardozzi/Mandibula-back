@@ -34,6 +34,13 @@ enum PaymentMethod {
   CASH
 }
 
+enum PaymentStatus {
+  PENDING   // En attente de paiement
+  PAID      // Paiement confirmé par SumUp
+  FAILED    // Paiement refusé
+  REFUNDED  // Remboursé
+}
+
 enum StockStatus {
   IN_STOCK
   LOW_STOCK
@@ -146,32 +153,56 @@ model Category {
   image       String?
   isActive    Boolean @default(true)
 
+  // Hiérarchie : null = catégorie racine, sinon = sous-catégorie
+  parentId String?
+  parent   Category?  @relation("SubCategories", fields: [parentId], references: [id])
+  children Category[] @relation("SubCategories")
+
   products  Product[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
 
 model Product {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   description String?
-  price       Decimal  @db.Decimal(10, 2)
+  // Prix d'affichage (correspond généralement au prix de l'Unité)
+  price       Decimal @db.Decimal(10, 2)
   images      String[]
 
-  // Attributs JSON flexibles par catégorie
+  // Attributs JSON flexibles par catégorie (origine, temp, humidité, etc.)
   attributes Json?
 
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id])
 
-  // Stock management
+  variants  ProductVariant[]
   stockInfo StockInfo?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
 
-  orderItems OrderItem[]
+model ProductVariant {
+  id        String  @id @default(uuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  name    String  // "Unité", "Lot de 10", "Lot de 20"...
+  lotSize Int     @default(1) // Nombre d'individus/unités dans le lot
+  price   Decimal @db.Decimal(10, 2)
+  stock   Int     @default(0)
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@unique([productId, name])
+  @@map("product_variant")
 }
 
 model StockInfo {
@@ -208,13 +239,23 @@ model Order {
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
-  status OrderStatus @default(PENDING)
-  total  Decimal     @db.Decimal(10, 2)
-  tax    Decimal?    @db.Decimal(10, 2)
+  status        OrderStatus   @default(PENDING)
+  paymentStatus PaymentStatus @default(PENDING)
+  paymentMethod PaymentMethod
+
+  // Référence de transaction retournée par SumUp après paiement
+  sumupCheckoutId String? @unique
+
+  subtotal     Decimal  @db.Decimal(10, 2) // Total produits HT
+  shippingCost Decimal  @default(0) @db.Decimal(10, 2)
+  tax          Decimal? @db.Decimal(10, 2)
+  total        Decimal  @db.Decimal(10, 2) // subtotal + shippingCost + tax
 
   billingAddress  String?
   shippingAddress String?
-  paymentMethod   PaymentMethod
+
+  // Instructions spéciales (ex: "expédition vivant", "retrait sur place")
+  notes String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -227,11 +268,12 @@ model OrderItem {
   orderId String
   order   Order  @relation(fields: [orderId], references: [id])
 
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
 
-  quantity Int
-  price    Decimal @db.Decimal(10, 2)
+  quantity    Int
+  price       Decimal @db.Decimal(10, 2) // Prix snapshot au moment de la commande
+  variantName String  // Snapshot : "Lot de 10" (au cas où la variante est modifiée)
 
   createdAt DateTime @default(now())
 }
@@ -253,20 +295,20 @@ model Cart {
 }
 
 model CartItem {
-  id       String @id @default(cuid())
-  cartId   String
-  cart     Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  cartId String
+  cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
 
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
 
   quantity Int     @default(1)
-  price    Decimal @db.Decimal(10, 2) // Prix capturé au moment de l'ajout
+  price    Decimal @db.Decimal(10, 2) // Prix snapshot au moment de l'ajout
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([cartId, productId])
-  @@index([productId])
+  @@unique([cartId, variantId])
+  @@index([variantId])
   @@map("cart_item")
 }

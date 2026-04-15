@@ -49,24 +49,23 @@ router.post(
 );
 
 /**
- * PATCH /api/cart/items/:productId
+ * PATCH /api/cart/items/:variantId
  * Met à jour la quantité d'un article
  */
 router.patch(
-  '/items/:productId',
+  '/items/:variantId',
   authMiddleware,
   validateBody(updateCartItemSchema),
   async (req: Request, res: Response) => {
     try {
-      const { productId } = req.params;
+      const { variantId } = req.params;
 
-      // Valider que productId est un UUID valide
-      if (!productId || productId.length !== 36) {
-        res.status(400).json({ error: 'ID produit invalide' });
+      if (!variantId || variantId.length !== 36) {
+        res.status(400).json({ error: 'ID variante invalide' });
         return;
       }
 
-      const cartItem = await CartService.updateCartItem(req.user!.id, productId, req.body);
+      const cartItem = await CartService.updateCartItem(req.user!.id, variantId, req.body);
       res.status(200).json({ success: true, item: cartItem });
     } catch (error) {
       if (error instanceof Error) {
@@ -79,20 +78,19 @@ router.patch(
 );
 
 /**
- * DELETE /api/cart/items/:productId
+ * DELETE /api/cart/items/:variantId
  * Supprime un article du panier
  */
-router.delete('/items/:productId', authMiddleware, async (req: Request, res: Response) => {
+router.delete('/items/:variantId', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { productId } = req.params;
+    const { variantId } = req.params;
 
-    // Valider que productId est un UUID valide
-    if (!productId || productId.length !== 36) {
-      res.status(400).json({ error: 'ID produit invalide' });
+    if (!variantId || variantId.length !== 36) {
+      res.status(400).json({ error: 'ID variante invalide' });
       return;
     }
 
-    const result = await CartService.removeFromCart(req.user!.id, productId);
+    const result = await CartService.removeFromCart(req.user!.id, variantId);
     res.status(200).json(result);
   } catch (error) {
     if (error instanceof Error) {
@@ -104,6 +102,29 @@ router.delete('/items/:productId', authMiddleware, async (req: Request, res: Res
 });
 
 /**
+ * POST /api/cart/promo
+ * Vérifie la validité d'un code promo par rapport au sous-total courant
+ */
+router.post('/promo', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { code, subtotal } = req.body;
+
+    if (!code || typeof code !== 'string') {
+      res.status(400).json({ error: 'Code promo manquant' });
+      return;
+    }
+
+    const parsedSubtotal = typeof subtotal === 'number' ? subtotal : 0;
+    const result = CartService.validatePromoCode(code, parsedSubtotal);
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error validating promo:', error);
+    res.status(500).json({ error: 'Erreur lors de la vérification du code promo' });
+  }
+});
+
+/**
  * POST /api/cart/validate
  * CRITIQUE: Valide le panier avant checkout
  * Recalcule TOUS les prix, taxes, stocks, promo codes
@@ -111,7 +132,8 @@ router.delete('/items/:productId', authMiddleware, async (req: Request, res: Res
  */
 router.post('/validate', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const validation = await CartService.validateCart(req.user!.id);
+    const promoCode: string | undefined = typeof req.body?.promoCode === 'string' ? req.body.promoCode : undefined;
+    const validation = await CartService.validateCart(req.user!.id, promoCode);
 
     if (!validation.valid) {
       res.status(422).json({

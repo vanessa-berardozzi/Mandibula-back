@@ -5,7 +5,7 @@ import { z } from 'zod';
  */
 
 export const addToCartSchema = z.object({
-  productId: z.string().uuid('ID produit invalide'),
+  variantId: z.string().uuid('ID variante invalide'),
   quantity: z.number().int().min(1, 'Quantité minimum: 1').max(100, 'Quantité maximum: 100').optional().default(1),
 });
 
@@ -14,7 +14,7 @@ export const updateCartItemSchema = z.object({
 });
 
 export const cartItemIdSchema = z.object({
-  productId: z.string().uuid('ID produit invalide'),
+  variantId: z.string().uuid('ID variante invalide'),
 });
 
 export type AddToCartInput = z.infer<typeof addToCartSchema>;

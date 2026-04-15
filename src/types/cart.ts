@@ -1,15 +1,15 @@
-import type { Cart, CartItem, Product } from '@prisma/client';
+import type { Cart, CartItem, Product, ProductVariant } from '@prisma/client';
 
 /**
  * Types pour le panier
  */
 
-export interface CartItemWithProduct extends CartItem {
-  product: Product;
+export interface CartItemWithVariant extends CartItem {
+  variant: ProductVariant & { product: Product };
 }
 
 export interface CartWithItems extends Cart {
-  items: CartItemWithProduct[];
+  items: CartItemWithVariant[];
 }
 
 export interface CartResponse {
@@ -24,20 +24,26 @@ export interface CartResponse {
 
 export interface CartItemResponse {
   id: string;
-  productId: string;
-  product: {
+  variantId: string;
+  variant: {
     id: string;
     name: string;
     price: number;
-    image?: string;
+    lotSize: number;
+    stock: number;
+    product: {
+      id: string;
+      name: string;
+      image?: string;
+    };
   };
   quantity: number;
   price: number;
-  total: number; // quantity * price
+  total: number;
 }
 
 export interface AddToCartRequest {
-  productId: string;
+  variantId: string;
   quantity?: number;
 }
 
@@ -51,12 +57,32 @@ export interface CartValidationResponse {
   subtotal: number;
   tax: number;
   shippingCost: number;
+  discount: number;
   total: number;
+  promoCode?: string;
   errors?: string[];
 }
 
+export interface PromoCode {
+  code: string;
+  description: string;
+  type: 'percent' | 'fixed';
+  value: number;
+  minSubtotal?: number;
+}
+
+export interface PromoValidationResponse {
+  valid: boolean;
+  code?: string;
+  description?: string;
+  discountType?: 'percent' | 'fixed';
+  discountValue?: number;
+  discountAmount?: number;
+  error?: string;
+}
+
 export interface CartItemValidated {
-  productId: string;
+  variantId: string;
   quantity: number;
   price: number;
   total: number;

@@ -1,10 +1,13 @@
 import { prisma } from '../lib/prisma';
 import type {
-    AddToCartRequest,
-    CartItemValidated,
-    CartResponse,
-    CartValidationResponse,
-    UpdateCartItemRequest,
+  AddToCartRequest,
+  CartItemValidated,
+  CartResponse,
+  CartValidationResponse,
+  CartWithItems,
+  PromoCode,
+  PromoValidationResponse,
+  UpdateCartItemRequest,
 } from '../types/cart';
 
 /**
@@ -15,143 +18,112 @@ import type {
 const TAX_RATE = 0.2; // 20% TVA
 const SHIPPING_COST = 5.99; // Frais de port fixes
 
+/** Catalogue des codes promo actifs */
+const PROMO_CODES: PromoCode[] = [
+  { code: 'MANDIBULA10', description: '10% sur votre commande', type: 'percent', value: 10 },
+  { code: 'BIENVENUE', description: '5€ de réduction', type: 'fixed', value: 5, minSubtotal: 20 },
+  { code: 'ISOPODE20', description: '20% sur votre commande', type: 'percent', value: 20, minSubtotal: 50 },
+  { code: 'LIVRAISON', description: 'Frais de port offerts', type: 'fixed', value: 5.99 },
+];
+
 export class CartService {
   /**
    * Récupère ou crée le panier de l'utilisateur
    */
-  static async getOrCreateCart(userId: string) {
-    let cart = await prisma.cart.findUnique({
-      where: { userId },
-      include: { items: { include: { product: true } } },
-    });
+  static async getOrCreateCart(userId: string): Promise<CartWithItems> {
+    const include = {
+      items: {
+        include: {
+          variant: { include: { product: true } },
+        },
+      },
+    } as const;
+
+    let cart = await prisma.cart.findUnique({ where: { userId }, include });
 
     if (!cart) {
-      cart = await prisma.cart.create({
-        data: { userId },
-        include: { items: { include: { product: true } } },
-      });
+      cart = await prisma.cart.create({ data: { userId }, include });
     }
 
-    return cart;
+    return cart as CartWithItems;
   }
 
   /**
    * Ajoute un produit au panier ou augmente sa quantité
    */
   static async addToCart(userId: string, data: AddToCartRequest) {
-    const { productId, quantity = 1 } = data;
+    const { variantId, quantity = 1 } = data;
 
-    // Vérifier que le produit existe et son stock
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
-      include: { stockInfo: true },
+    const variant = await prisma.productVariant.findUnique({
+      where: { id: variantId },
     });
 
-    if (!product) {
-      throw new Error('Produit non trouvé');
-    }
-
-    // Vérifier le stock
-    if (!product.stockInfo || product.stockInfo.quantity < quantity) {
-      throw new Error('Stock insuffisant');
-    }
+    if (!variant) throw new Error('Variante non trouvée');
+    if (!variant.isActive) throw new Error('Cette variante n\'est plus disponible');
+    if (variant.stock < quantity) throw new Error('Stock insuffisant');
 
     const cart = await this.getOrCreateCart(userId);
 
-    // Vérifier si l'article existe déjà dans le panier
-    const existingItem = await prisma.cartItem.findUnique({
-      where: { cartId_productId: { cartId: cart.id, productId } },
+    const existing = await prisma.cartItem.findUnique({
+      where: { cartId_variantId: { cartId: cart.id, variantId } },
     });
 
-    if (existingItem) {
-      // Mettre à jour la quantité
-      const newQuantity = existingItem.quantity + quantity;
-      if (newQuantity > 100) {
-        throw new Error('Quantité maximum: 100');
-      }
+    if (existing) {
+      const newQty = existing.quantity + quantity;
+      if (newQty > 100) throw new Error('Quantité maximum: 100');
 
-      const updated = await prisma.cartItem.update({
-        where: { id: existingItem.id },
-        data: { quantity: newQuantity, updatedAt: new Date() },
-        include: { product: true },
+      return prisma.cartItem.update({
+        where: { id: existing.id },
+        data: { quantity: newQty, updatedAt: new Date() },
+        include: { variant: { include: { product: true } } },
       });
-
-      return updated;
     }
 
-    // Créer un nouvel article
-    const cartItem = await prisma.cartItem.create({
-      data: {
-        cartId: cart.id,
-        productId,
-        quantity,
-        price: product.price,
-      },
-      include: { product: true },
+    return prisma.cartItem.create({
+      data: { cartId: cart.id, variantId, quantity, price: variant.price },
+      include: { variant: { include: { product: true } } },
     });
-
-    return cartItem;
   }
 
   /**
    * Met à jour la quantité d'un article
    */
-  static async updateCartItem(userId: string, productId: string, data: UpdateCartItemRequest) {
+  static async updateCartItem(userId: string, variantId: string, data: UpdateCartItemRequest) {
     const { quantity } = data;
 
-    if (quantity === 0) {
-      // Si quantité 0, supprimer l'article
-      return this.removeFromCart(userId, productId);
-    }
+    if (quantity === 0) return this.removeFromCart(userId, variantId);
 
     const cart = await this.getOrCreateCart(userId);
 
     const cartItem = await prisma.cartItem.findUnique({
-      where: { cartId_productId: { cartId: cart.id, productId } },
-      include: { product: true },
+      where: { cartId_variantId: { cartId: cart.id, variantId } },
     });
 
-    if (!cartItem) {
-      throw new Error('Article non trouvé dans le panier');
-    }
+    if (!cartItem) throw new Error('Article non trouvé dans le panier');
 
-    // Vérifier le stock disponible
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
-      include: { stockInfo: true },
-    });
+    const variant = await prisma.productVariant.findUnique({ where: { id: variantId } });
+    if (!variant || variant.stock < quantity) throw new Error('Stock insuffisant pour cette quantité');
 
-    if (!product || !product.stockInfo || product.stockInfo.quantity < quantity) {
-      throw new Error('Stock insuffisant pour cette quantité');
-    }
-
-    const updated = await prisma.cartItem.update({
+    return prisma.cartItem.update({
       where: { id: cartItem.id },
       data: { quantity, updatedAt: new Date() },
-      include: { product: true },
+      include: { variant: { include: { product: true } } },
     });
-
-    return updated;
   }
 
   /**
    * Supprime un article du panier
    */
-  static async removeFromCart(userId: string, productId: string) {
+  static async removeFromCart(userId: string, variantId: string) {
     const cart = await this.getOrCreateCart(userId);
 
     const cartItem = await prisma.cartItem.findUnique({
-      where: { cartId_productId: { cartId: cart.id, productId } },
+      where: { cartId_variantId: { cartId: cart.id, variantId } },
     });
 
-    if (!cartItem) {
-      throw new Error('Article non trouvé dans le panier');
-    }
+    if (!cartItem) throw new Error('Article non trouvé dans le panier');
 
-    await prisma.cartItem.delete({
-      where: { id: cartItem.id },
-    });
-
+    await prisma.cartItem.delete({ where: { id: cartItem.id } });
     return { success: true, message: 'Article supprimé du panier' };
   }
 
@@ -163,12 +135,18 @@ export class CartService {
 
     const items = cart.items.map((item) => ({
       id: item.id,
-      productId: item.productId,
-      product: {
-        id: item.product.id,
-        name: item.product.name,
-        price: Number(item.product.price),
-        image: item.product.images?.[0],
+      variantId: item.variantId,
+      variant: {
+        id: item.variant.id,
+        name: item.variant.name,
+        price: Number(item.variant.price),
+        lotSize: item.variant.lotSize,
+        stock: item.variant.stock,
+        product: {
+          id: item.variant.product.id,
+          name: item.variant.product.name,
+          image: item.variant.product.images?.[0],
+        },
       },
       quantity: item.quantity,
       price: Number(item.price),
@@ -184,7 +162,7 @@ export class CartService {
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
       subtotal,
-      itemCount: cart.items.length,
+      itemCount: items.reduce((acc, item) => acc + item.quantity, 0),
     };
   }
 
@@ -193,49 +171,44 @@ export class CartService {
    * Recalcule todos les prix, taxes, stocks, promo codes
    * Defense ultime contre tampering du client
    */
-  static async validateCart(userId: string): Promise<CartValidationResponse> {
+  static async validateCart(userId: string, promoCode?: string): Promise<CartValidationResponse> {
     const cart = await this.getOrCreateCart(userId);
     const errors: string[] = [];
     const validatedItems: CartItemValidated[] = [];
 
     // Valider chaque article
     for (const item of cart.items) {
-      const product = await prisma.product.findUnique({
-        where: { id: item.productId },
-        include: { stockInfo: true },
+      const variant = await prisma.productVariant.findUnique({
+        where: { id: item.variantId },
       });
 
-      // Vérifier que le produit existe toujours
-      if (!product) {
-        errors.push(`Produit ${item.id} n'existe plus`);
+      if (!variant) {
+        errors.push(`Variante ${item.variantId} n'existe plus`);
         continue;
       }
 
-      // Vérifier le stock
-      if (!product.stockInfo || product.stockInfo.quantity < item.quantity) {
-        errors.push(`Stock insuffisant pour ${product.name}: ${product.stockInfo?.quantity || 0} disponible(s)`);
+      if (variant.stock < item.quantity) {
+        errors.push(`Stock insuffisant pour "${item.variant.product.name} - ${variant.name}": ${variant.stock} disponible(s)`);
         validatedItems.push({
-          productId: item.productId,
+          variantId: item.variantId,
           quantity: item.quantity,
-          price: Number(product.price),
-          total: item.quantity * Number(product.price),
+          price: Number(variant.price),
+          total: item.quantity * Number(variant.price),
           available: false,
         });
         continue;
       }
 
-      // Recalculer le prix (défense contre tampering)
-      const currentPrice = Number(product.price);
+      const currentPrice = Number(variant.price);
       const savedPrice = Number(item.price);
-
       if (currentPrice !== savedPrice) {
-        console.warn(`Prix différent pour ${product.name}: ${savedPrice} -> ${currentPrice}`);
+        console.warn(`Prix différent pour ${item.variant.product.name} - ${variant.name}: ${savedPrice} -> ${currentPrice}`);
       }
 
       validatedItems.push({
-        productId: item.productId,
+        variantId: item.variantId,
         quantity: item.quantity,
-        price: currentPrice, // Utiliser le prix serveur
+        price: currentPrice,
         total: item.quantity * currentPrice,
         available: true,
       });
@@ -246,8 +219,22 @@ export class CartService {
       .filter((item) => item.available)
       .reduce((acc, item) => acc + item.total, 0);
 
-    const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
-    const total = subtotal + tax + SHIPPING_COST;
+    // Appliquer le code promo si fourni
+    let discount = 0;
+    let appliedPromoCode: string | undefined;
+    if (promoCode) {
+      const promoResult = this.validatePromoCode(promoCode, subtotal);
+      if (promoResult.valid && promoResult.discountAmount !== undefined) {
+        discount = promoResult.discountAmount;
+        appliedPromoCode = promoResult.code;
+      } else if (!promoResult.valid) {
+        errors.push(promoResult.error ?? 'Code promo invalide');
+      }
+    }
+
+    const discountedSubtotal = subtotal - discount;
+    const tax = Math.round(discountedSubtotal * TAX_RATE * 100) / 100;
+    const total = discountedSubtotal + tax + SHIPPING_COST;
 
     return {
       valid: errors.length === 0 && validatedItems.length > 0,
@@ -255,8 +242,42 @@ export class CartService {
       subtotal,
       tax,
       shippingCost: SHIPPING_COST,
+      discount,
       total,
+      promoCode: appliedPromoCode,
       errors: errors.length > 0 ? errors : undefined,
+    };
+  }
+
+  /**
+   * Valide un code promo par rapport au sous-total
+   */
+  static validatePromoCode(code: string, subtotal: number): PromoValidationResponse {
+    const promo = PROMO_CODES.find((p) => p.code === code.toUpperCase().trim());
+
+    if (!promo) {
+      return { valid: false, error: 'Code promo invalide ou expiré' };
+    }
+
+    if (promo.minSubtotal && subtotal < promo.minSubtotal) {
+      return {
+        valid: false,
+        error: `Ce code nécessite un minimum d'achat de ${promo.minSubtotal.toFixed(2)}€`,
+      };
+    }
+
+    const discountAmount =
+      promo.type === 'percent'
+        ? Math.round(subtotal * (promo.value / 100) * 100) / 100
+        : Math.min(promo.value, subtotal);
+
+    return {
+      valid: true,
+      code: promo.code,
+      description: promo.description,
+      discountType: promo.type,
+      discountValue: promo.value,
+      discountAmount,
     };
   }
 

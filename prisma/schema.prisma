@@ -192,7 +192,8 @@ model ProductVariant {
   name    String  // "Unité", "Lot de 10", "Lot de 20"...
   lotSize Int     @default(1) // Nombre d'individus/unités dans le lot
   price   Decimal @db.Decimal(10, 2)
-  stock   Int     @default(0)
+  stock         Int @default(0) // Stock physique disponible
+  reservedStock Int @default(0) // Réservé par des commandes PENDING (non payées)
   isActive Boolean @default(true)
 
   createdAt DateTime @default(now())

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
+import { CartService } from '../services/cartService';
 import { paymentService } from '../services/payment/payment.service';
 import type { CreateCheckoutInput } from '../validations/checkout.validation';
 
@@ -143,9 +144,10 @@ export class CheckoutController {
         console.log('[Webhook] Checkout reference:', checkoutReference, '→ Order ID:', orderId);
       }
 
-      // Mettre à jour le statut de la commande
+      // Récupérer la commande avec ses items
       const order = await prisma.order.findFirst({
         where: { id: orderId },
+        include: { orderItems: true },
       });
 
       if (!order) {
@@ -153,16 +155,58 @@ export class CheckoutController {
         return res.status(404).json({ error: 'Commande non trouvée' });
       }
 
-      await prisma.order.update({
-        where: { id: order.id },
-        data: {
-          paymentStatus: webhookResult.paymentStatus,
-          status: webhookResult.paymentStatus === 'PAID' ? 'CONFIRMED' : order.status,
-        },
-      });
+      // Éviter de traiter deux fois un paiement déjà confirmé
+      if (order.paymentStatus === 'PAID') {
+        return res.status(200).json({ success: true, alreadyProcessed: true });
+      }
 
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[Webhook] Order updated:', orderId, '→', webhookResult.paymentStatus);
+      if (webhookResult.paymentStatus === 'PAID') {
+        // Transaction atomique : mettre à jour commande + stock
+        await prisma.$transaction(async (tx) => {
+          // 1. Confirmer la commande
+          await tx.order.update({
+            where: { id: order.id },
+            data: { paymentStatus: 'PAID', status: 'CONFIRMED' },
+          });
+
+          // 2. Décrémenter le stock physique et libérer la réservation
+          for (const item of order.orderItems) {
+            await tx.productVariant.update({
+              where: { id: item.variantId },
+              data: {
+                stock: { decrement: item.quantity },
+                reservedStock: { decrement: item.quantity },
+              },
+            });
+          }
+        });
+
+        // 3. Vider le panier (hors transaction — non critique)
+        await CartService.clearCart(order.userId).catch((err) =>
+          console.error('[Webhook] Erreur vidage panier:', err)
+        );
+
+        console.log('[Webhook] Paiement confirmé, stock mis à jour, panier vidé:', orderId);
+      } else {
+        // Paiement échoué ou annulé → libérer la réservation
+        await prisma.$transaction(async (tx) => {
+          await tx.order.update({
+            where: { id: order.id },
+            data: {
+              paymentStatus: webhookResult.paymentStatus,
+              status: 'CANCELLED',
+            },
+          });
+
+          for (const item of order.orderItems) {
+            await tx.productVariant.update({
+              where: { id: item.variantId },
+              data: { reservedStock: { decrement: item.quantity } },
+            });
+          }
+        });
+
+        console.log('[Webhook] Paiement échoué, réservation libérée:', orderId, webhookResult.paymentStatus);
       }
 
       // SumUp attend une réponse 200 pour confirmer la réception du webhook

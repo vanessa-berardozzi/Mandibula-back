@@ -67,6 +67,27 @@ export class OrderController {
       // Créer un map pour accès rapide aux variantes
       const variantMap = new Map(variants.map((v) => [v.id, v]));
 
+      // Vérifier le stock disponible (physique - réservé) pour chaque article
+      const stockErrors: { variantName: string; productName: string; available: number; requested: number }[] = [];
+      for (const item of items) {
+        const variant = variantMap.get(item.variantId)!;
+        const available = variant.stock - variant.reservedStock;
+        if (available < item.quantity) {
+          stockErrors.push({
+            variantName: variant.name,
+            productName: variant.product.name,
+            available,
+            requested: item.quantity,
+          });
+        }
+      }
+      if (stockErrors.length > 0) {
+        return res.status(400).json({
+          error: 'Stock insuffisant',
+          details: stockErrors,
+        });
+      }
+
       // Calculer le subtotal et préparer les items de commande
       let subtotal = 0;
       const orderItems = items.map((item) => {
@@ -87,35 +108,35 @@ export class OrderController {
       const tax = null;
       const total = subtotal + shippingCost;
 
-      // Créer la commande avec les items
-      const order = await prisma.order.create({
-        data: {
-          userId,
-          status: 'PENDING',
-          paymentStatus: 'PENDING',
-          paymentMethod,
-          subtotal,
-          shippingCost,
-          tax,
-          total,
-          shippingAddress,
-          billingAddress,
-          notes,
-          orderItems: {
-            create: orderItems,
-          },
-        },
-        include: {
-          orderItems: {
-            include: {
-              variant: {
-                include: {
-                  product: true,
-                },
-              },
+      // Créer la commande ET réserver le stock dans une transaction atomique
+      const order = await prisma.$transaction(async (tx) => {
+        // Réserver le stock pour chaque variante
+        for (const item of items) {
+          await tx.productVariant.update({
+            where: { id: item.variantId },
+            data: { reservedStock: { increment: item.quantity } },
+          });
+        }
+
+        // Créer la commande avec les items
+        return tx.order.create({
+          data: {
+            userId,
+            status: 'PENDING',
+            paymentStatus: 'PENDING',
+            paymentMethod,
+            subtotal,
+            shippingCost,
+            tax,
+            total,
+            shippingAddress,
+            billingAddress,
+            notes,
+            orderItems: {
+              create: orderItems,
             },
           },
-        },
+        });
       });
 
       res.status(201).json({

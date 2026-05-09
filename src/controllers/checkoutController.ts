@@ -4,6 +4,119 @@ import { CartService } from '../services/cartService';
 import { paymentService } from '../services/payment/payment.service';
 import type { CreateCheckoutInput } from '../validations/checkout.validation';
 
+// ── Types internes ────────────────────────────────────────────────────────────
+
+type OrderWithItems = {
+  id: string;
+  userId: string;
+  total: import('@prisma/client').Prisma.Decimal;
+  orderItems: Array<{
+    variantId: string;
+    quantity: number;
+    variant: { productId: string };
+  }>;
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Confirme un paiement dans une transaction atomique :
+ * - passe la commande en CONFIRMED/PAID
+ * - décrémente stock + reservedStock sur chaque variante
+ * - crée un StockMovement par variante
+ * - met à jour le statut StockInfo (LOW_STOCK / OUT_OF_STOCK) si existant
+ *
+ * Inclut une garde idempotente : ne fait rien si la commande n'est plus PENDING.
+ */
+async function confirmPayment(order: OrderWithItems, context: string): Promise<boolean> {
+  let processed = false;
+
+  await prisma.$transaction(async (tx) => {
+    const current = await tx.order.findUnique({ where: { id: order.id } });
+    if (current?.paymentStatus !== 'PENDING') return; // déjà traité
+
+    await tx.order.update({
+      where: { id: order.id },
+      data: { paymentStatus: 'PAID', status: 'CONFIRMED' },
+    });
+
+    for (const item of order.orderItems) {
+      const updatedVariant = await tx.productVariant.update({
+        where: { id: item.variantId },
+        data: {
+          stock:         { decrement: item.quantity },
+          reservedStock: { decrement: item.quantity },
+        },
+      });
+
+      // Mouvement de stock lié à la variante (source de vérité)
+      await tx.stockMovement.create({
+        data: {
+          variantId: item.variantId,
+          productId: item.variant.productId,
+          type:      'OUT',
+          quantity:  item.quantity,
+          reason:    `Order #${order.id.slice(0, 8)} - ${context}`,
+        },
+      });
+
+      // Mettre à jour le statut StockInfo si configuré pour ce produit
+      const stockInfo = await tx.stockInfo.findUnique({
+        where: { productId: item.variant.productId },
+      });
+      if (stockInfo) {
+        // Recalculer le total stock du produit pour déterminer le nouveau statut
+        const sibling = await tx.productVariant.aggregate({
+          where:   { productId: item.variant.productId },
+          _sum:    { stock: true },
+        });
+        const totalStock = sibling._sum.stock ?? 0;
+        const newStatus =
+          totalStock === 0                    ? 'OUT_OF_STOCK' :
+          totalStock <= stockInfo.minThreshold ? 'LOW_STOCK'    :
+                                                 'IN_STOCK';
+        await tx.stockInfo.update({
+          where: { id: stockInfo.id },
+          data:  { status: newStatus },
+        });
+      }
+    }
+
+    processed = true;
+  });
+
+  return processed;
+}
+
+/**
+ * Annule un paiement (FAILED / CANCELLED) :
+ * - passe la commande au statut fourni
+ * - libère uniquement la réservation (reservedStock) — le stock physique reste intact
+ */
+async function cancelPayment(
+  order: OrderWithItems,
+  paymentStatus: string,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const current = await tx.order.findUnique({ where: { id: order.id } });
+    if (current?.paymentStatus !== 'PENDING') return;
+
+    await tx.order.update({
+      where: { id: order.id },
+      data: { paymentStatus: paymentStatus as any, status: 'CANCELLED' },
+    });
+
+    for (const item of order.orderItems) {
+      await tx.productVariant.update({
+        where: { id: item.variantId },
+        data:  { reservedStock: { decrement: item.quantity } },
+      });
+    }
+  });
+}
+
+// ── Controller ────────────────────────────────────────────────────────────────
+
 export class CheckoutController {
   /**
    * Crée un checkout de paiement et retourne l'URL de redirection
@@ -161,70 +274,13 @@ export class CheckoutController {
       }
 
       if (webhookResult.paymentStatus === 'PAID') {
-        // Transaction atomique : mettre à jour commande + stock
-        await prisma.$transaction(async (tx) => {
-          // 1. Confirmer la commande
-          await tx.order.update({
-            where: { id: order.id },
-            data: { paymentStatus: 'PAID', status: 'CONFIRMED' },
-          });
-
-          // 2. Décrémenter le stock physique et libérer la réservation
-          for (const item of order.orderItems) {
-            await tx.productVariant.update({
-              where: { id: item.variantId },
-              data: {
-                stock: { decrement: item.quantity },
-                reservedStock: { decrement: item.quantity },
-              },
-            });
-
-            // Créer un mouvement de stock si StockInfo existe pour ce produit
-            const stockInfo = await tx.stockInfo.findUnique({
-              where: { productId: item.variant.productId },
-            });
-            if (stockInfo) {
-              await tx.stockInfo.update({
-                where: { id: stockInfo.id },
-                data: { quantity: { decrement: item.quantity } },
-              });
-              await tx.stockMovement.create({
-                data: {
-                  stockId: stockInfo.id,
-                  type: 'OUT',
-                  quantity: item.quantity,
-                  reason: `Order #${order.id.slice(0, 8)} - Payment confirmed`,
-                },
-              });
-            }
-          }
-        });
-
-        // 3. Vider le panier (hors transaction — non critique)
+        await confirmPayment(order, 'Payment confirmed');
         await CartService.clearCart(order.userId).catch((err) =>
           console.error('[Webhook] Erreur vidage panier:', err)
         );
-
         console.log('[Webhook] Paiement confirmé, stock mis à jour, panier vidé:', orderId);
       } else {
-        // Paiement échoué ou annulé → libérer la réservation
-        await prisma.$transaction(async (tx) => {
-          await tx.order.update({
-            where: { id: order.id },
-            data: {
-              paymentStatus: webhookResult.paymentStatus,
-              status: 'CANCELLED',
-            },
-          });
-
-          for (const item of order.orderItems) {
-            await tx.productVariant.update({
-              where: { id: item.variantId },
-              data: { reservedStock: { decrement: item.quantity } },
-            });
-          }
-        });
-
+        await cancelPayment(order, webhookResult.paymentStatus);
         console.log('[Webhook] Paiement échoué, réservation libérée:', orderId, webhookResult.paymentStatus);
       }
 
@@ -268,52 +324,13 @@ export class CheckoutController {
           const sumupStatus = await provider.checkPaymentStatus!(order.sumupCheckoutId);
 
           if (sumupStatus === 'PAID') {
-            await prisma.$transaction(async (tx) => {
-              // Re-vérifier dans la transaction pour éviter le double traitement
-              const current = await tx.order.findUnique({ where: { id: order.id } });
-              if (current?.paymentStatus !== 'PENDING') return;
-
-              await tx.order.update({
-                where: { id: order.id },
-                data: { paymentStatus: 'PAID', status: 'CONFIRMED' },
-              });
-
-              for (const item of order.orderItems) {
-                await tx.productVariant.update({
-                  where: { id: item.variantId },
-                  data: {
-                    stock: { decrement: item.quantity },
-                    reservedStock: { decrement: item.quantity },
-                  },
-                });
-
-                // Créer un mouvement de stock si StockInfo existe pour ce produit
-                const stockInfo = await tx.stockInfo.findUnique({
-                  where: { productId: item.variant.productId },
-                });
-                if (stockInfo) {
-                  await tx.stockInfo.update({
-                    where: { id: stockInfo.id },
-                    data: { quantity: { decrement: item.quantity } },
-                  });
-                  await tx.stockMovement.create({
-                    data: {
-                      stockId: stockInfo.id,
-                      type: 'OUT',
-                      quantity: item.quantity,
-                      reason: `Order #${order.id.slice(0, 8)} - Payment confirmed (fallback)`,
-                    },
-                  });
-                }
-              }
-            });
-
-            await CartService.clearCart(order.userId).catch((err) =>
-              console.error('[CheckOrderStatus] Erreur vidage panier:', err)
-            );
-
-            console.log('[CheckOrderStatus] Statut mis à jour via SumUp API (fallback):', orderId);
-
+            const processed = await confirmPayment(order, 'Payment confirmed (fallback)');
+            if (processed) {
+              await CartService.clearCart(order.userId).catch((err) =>
+                console.error('[CheckOrderStatus] Erreur vidage panier:', err)
+              );
+              console.log('[CheckOrderStatus] Statut mis à jour via SumUp API (fallback):', orderId);
+            }
             return res.status(200).json({
               orderId: order.id,
               status: 'CONFIRMED',
@@ -323,22 +340,7 @@ export class CheckoutController {
           }
 
           if (sumupStatus === 'FAILED') {
-            await prisma.$transaction(async (tx) => {
-              const current = await tx.order.findUnique({ where: { id: order.id } });
-              if (current?.paymentStatus !== 'PENDING') return;
-
-              await tx.order.update({
-                where: { id: order.id },
-                data: { paymentStatus: 'FAILED', status: 'CANCELLED' },
-              });
-              for (const item of order.orderItems) {
-                await tx.productVariant.update({
-                  where: { id: item.variantId },
-                  data: { reservedStock: { decrement: item.quantity } },
-                });
-              }
-            });
-
+            await cancelPayment(order, 'FAILED');
             return res.status(200).json({
               orderId: order.id,
               status: 'CANCELLED',

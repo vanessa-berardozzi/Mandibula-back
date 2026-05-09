@@ -392,6 +392,20 @@ async function main() {
         });
       }
 
+      // Synchroniser StockInfo : seuil d'alerte + statut calculé depuis les variantes
+      const totalStock = product.variants.reduce((sum, v) => sum + v.stock, 0);
+      const minThreshold = 5;
+      const stockStatus =
+        totalStock === 0                 ? 'OUT_OF_STOCK' :
+        totalStock <= minThreshold       ? 'LOW_STOCK'    :
+                                           'IN_STOCK';
+
+      await prisma.stockInfo.upsert({
+        where:  { productId: created.id },
+        update: { status: stockStatus, minThreshold },
+        create: { productId: created.id, minThreshold, status: stockStatus },
+      });
+
       console.log(`  ✅ ${product.name.trim()} (${product.variants.length} variante(s))`);
       inserted++;
     } catch (err) {

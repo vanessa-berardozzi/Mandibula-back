@@ -201,6 +201,7 @@ model ProductVariant {
 
   cartItems  CartItem[]
   orderItems OrderItem[]
+  movements  StockMovement[]
 
   @@unique([productId, name])
   @@map("product_variant")
@@ -211,24 +212,23 @@ model StockInfo {
   productId String  @unique
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  quantity     Int         @default(0)
+  // quantity est calculé à la volée : SUM(productVariant.stock) WHERE productId
   minThreshold Int         @default(5) // Seuil pour LOW_STOCK
   status       StockStatus @default(IN_STOCK)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  movements StockMovement[]
 }
 
 model StockMovement {
-  id      String    @id @default(uuid())
-  stockId String
-  stock   StockInfo @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  id        String         @id @default(uuid())
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  productId String         // Dénormalisé pour requêtes dashboard sans jointure
 
-  type     String // "IN", "OUT", "ADJUSTMENT"
+  type     String  // "IN", "OUT", "ADJUSTMENT"
   quantity Int
-  reason   String? // "Purchase", "Return", "Damage", etc.
+  reason   String? // ex: "Order #abc - Payment confirmed"
 
   createdAt DateTime @default(now())
 }

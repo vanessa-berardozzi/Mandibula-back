@@ -144,10 +144,10 @@ export class CheckoutController {
         console.log('[Webhook] Checkout reference:', checkoutReference, '→ Order ID:', orderId);
       }
 
-      // Récupérer la commande avec ses items
+      // Récupérer la commande avec ses items et variants
       const order = await prisma.order.findFirst({
         where: { id: orderId },
-        include: { orderItems: true },
+        include: { orderItems: { include: { variant: true } } },
       });
 
       if (!order) {
@@ -178,6 +178,25 @@ export class CheckoutController {
                 reservedStock: { decrement: item.quantity },
               },
             });
+
+            // Créer un mouvement de stock si StockInfo existe pour ce produit
+            const stockInfo = await tx.stockInfo.findUnique({
+              where: { productId: item.variant.productId },
+            });
+            if (stockInfo) {
+              await tx.stockInfo.update({
+                where: { id: stockInfo.id },
+                data: { quantity: { decrement: item.quantity } },
+              });
+              await tx.stockMovement.create({
+                data: {
+                  stockId: stockInfo.id,
+                  type: 'OUT',
+                  quantity: item.quantity,
+                  reason: `Order #${order.id.slice(0, 8)} - Payment confirmed`,
+                },
+              });
+            }
           }
         });
 
@@ -218,7 +237,9 @@ export class CheckoutController {
   }
 
   /**
-   * Vérifie le statut d'une commande (pour polling côté client)
+   * Vérifie le statut d'une commande (pour polling côté client).
+   * Si la commande est toujours PENDING et qu'un checkout SumUp existe,
+   * on interroge directement SumUp pour mettre à jour le statut (fallback webhook).
    */
   static async checkOrderStatus(req: Request, res: Response) {
     try {
@@ -227,6 +248,9 @@ export class CheckoutController {
 
       const order = await prisma.order.findUnique({
         where: { id: orderId },
+        include: {
+          orderItems: { include: { variant: true } },
+        },
       });
 
       if (!order) {
@@ -235,6 +259,97 @@ export class CheckoutController {
 
       if (order.userId !== userId) {
         return res.status(403).json({ error: 'Accès non autorisé' });
+      }
+
+      // Fallback : si toujours PENDING, interroger SumUp directement
+      if (order.paymentStatus === 'PENDING' && order.sumupCheckoutId) {
+        try {
+          const provider = paymentService.getProvider('SUM_UP');
+          const sumupStatus = await provider.checkPaymentStatus!(order.sumupCheckoutId);
+
+          if (sumupStatus === 'PAID') {
+            await prisma.$transaction(async (tx) => {
+              // Re-vérifier dans la transaction pour éviter le double traitement
+              const current = await tx.order.findUnique({ where: { id: order.id } });
+              if (current?.paymentStatus !== 'PENDING') return;
+
+              await tx.order.update({
+                where: { id: order.id },
+                data: { paymentStatus: 'PAID', status: 'CONFIRMED' },
+              });
+
+              for (const item of order.orderItems) {
+                await tx.productVariant.update({
+                  where: { id: item.variantId },
+                  data: {
+                    stock: { decrement: item.quantity },
+                    reservedStock: { decrement: item.quantity },
+                  },
+                });
+
+                // Créer un mouvement de stock si StockInfo existe pour ce produit
+                const stockInfo = await tx.stockInfo.findUnique({
+                  where: { productId: item.variant.productId },
+                });
+                if (stockInfo) {
+                  await tx.stockInfo.update({
+                    where: { id: stockInfo.id },
+                    data: { quantity: { decrement: item.quantity } },
+                  });
+                  await tx.stockMovement.create({
+                    data: {
+                      stockId: stockInfo.id,
+                      type: 'OUT',
+                      quantity: item.quantity,
+                      reason: `Order #${order.id.slice(0, 8)} - Payment confirmed (fallback)`,
+                    },
+                  });
+                }
+              }
+            });
+
+            await CartService.clearCart(order.userId).catch((err) =>
+              console.error('[CheckOrderStatus] Erreur vidage panier:', err)
+            );
+
+            console.log('[CheckOrderStatus] Statut mis à jour via SumUp API (fallback):', orderId);
+
+            return res.status(200).json({
+              orderId: order.id,
+              status: 'CONFIRMED',
+              paymentStatus: 'PAID',
+              total: order.total,
+            });
+          }
+
+          if (sumupStatus === 'FAILED') {
+            await prisma.$transaction(async (tx) => {
+              const current = await tx.order.findUnique({ where: { id: order.id } });
+              if (current?.paymentStatus !== 'PENDING') return;
+
+              await tx.order.update({
+                where: { id: order.id },
+                data: { paymentStatus: 'FAILED', status: 'CANCELLED' },
+              });
+              for (const item of order.orderItems) {
+                await tx.productVariant.update({
+                  where: { id: item.variantId },
+                  data: { reservedStock: { decrement: item.quantity } },
+                });
+              }
+            });
+
+            return res.status(200).json({
+              orderId: order.id,
+              status: 'CANCELLED',
+              paymentStatus: 'FAILED',
+              total: order.total,
+            });
+          }
+        } catch (sumupError) {
+          console.warn('[CheckOrderStatus] Erreur vérification SumUp:', sumupError);
+          // On retourne le statut DB actuel si SumUp est inaccessible
+        }
       }
 
       res.status(200).json({

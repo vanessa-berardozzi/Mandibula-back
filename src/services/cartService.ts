@@ -1,13 +1,13 @@
 import { prisma } from '../lib/prisma';
 import type {
-  AddToCartRequest,
-  CartItemValidated,
-  CartResponse,
-  CartValidationResponse,
-  CartWithItems,
-  PromoCode,
-  PromoValidationResponse,
-  UpdateCartItemRequest,
+    AddToCartRequest,
+    CartItemValidated,
+    CartResponse,
+    CartValidationResponse,
+    CartWithItems,
+    PromoCode,
+    PromoValidationResponse,
+    UpdateCartItemRequest,
 } from '../types/cart';
 
 /**
@@ -60,7 +60,8 @@ export class CartService {
 
     if (!variant) throw new Error('Variante non trouvée');
     if (!variant.isActive) throw new Error('Cette variante n\'est plus disponible');
-    if (variant.stock < quantity) throw new Error('Stock insuffisant');
+    const availableStock = variant.stock - variant.reservedStock;
+    if (availableStock < quantity) throw new Error(`Stock insuffisant : seulement ${availableStock} disponible(s)`);
 
     const cart = await this.getOrCreateCart(userId);
 
@@ -70,6 +71,7 @@ export class CartService {
 
     if (existing) {
       const newQty = existing.quantity + quantity;
+      if (newQty > availableStock) throw new Error(`Stock insuffisant : seulement ${availableStock} disponible(s)`);
       if (newQty > 100) throw new Error('Quantité maximum: 100');
 
       return prisma.cartItem.update({
@@ -102,7 +104,9 @@ export class CartService {
     if (!cartItem) throw new Error('Article non trouvé dans le panier');
 
     const variant = await prisma.productVariant.findUnique({ where: { id: variantId } });
-    if (!variant || variant.stock < quantity) throw new Error('Stock insuffisant pour cette quantité');
+    if (!variant) throw new Error('Variante non trouvée');
+    const availableStock = variant.stock - variant.reservedStock;
+    if (availableStock < quantity) throw new Error(`Stock insuffisant : seulement ${availableStock} disponible(s)`);
 
     return prisma.cartItem.update({
       where: { id: cartItem.id },
@@ -142,6 +146,8 @@ export class CartService {
         price: Number(item.variant.price),
         lotSize: item.variant.lotSize,
         stock: item.variant.stock,
+        reservedStock: item.variant.reservedStock,
+        availableStock: item.variant.stock - item.variant.reservedStock,
         product: {
           id: item.variant.product.id,
           name: item.variant.product.name,
@@ -187,8 +193,9 @@ export class CartService {
         continue;
       }
 
-      if (variant.stock < item.quantity) {
-        errors.push(`Stock insuffisant pour "${item.variant.product.name} - ${variant.name}": ${variant.stock} disponible(s)`);
+      const available = variant.stock - variant.reservedStock;
+      if (available < item.quantity) {
+        errors.push(`Stock insuffisant pour "${item.variant.product.name} - ${variant.name}": ${available} disponible(s)`);
         validatedItems.push({
           variantId: item.variantId,
           quantity: item.quantity,

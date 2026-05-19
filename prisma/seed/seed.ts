@@ -38,6 +38,7 @@ interface CsvProduct {
   category: string;
   images: string[];
   variants: CsvVariant[];
+  showInStore: boolean;
 }
 
 // ── Mapping catégories SumUp → hiérarchie Mandibula ───────────────────────────
@@ -187,6 +188,7 @@ function groupCsvRows(records: Record<string, string>[]): CsvProduct[] {
 
     if (itemName) {
       if (current) products.push(current);
+      const onlineStore = (row['Display item in Online Store? (Yes/No)'] || '').trim().toLowerCase();
       current = {
         name:           itemName,
         sumupId,
@@ -196,6 +198,7 @@ function groupCsvRows(records: Record<string, string>[]): CsvProduct[] {
         category:       (row['Category'] || '').trim(),
         images:         getImages(row),
         variants:       [],
+        showInStore:    onlineStore !== 'no',
       };
       // Produit à variante unique : la variante est sur la même ligne
       if (sumupVarId) {
@@ -272,7 +275,7 @@ function resolveCategoryMapping(sumupCategory: string): CategoryMapping {
 async function main() {
   console.log('🌱 Démarrage du seeding depuis le CSV SumUp...\n');
 
-  const csvPath = path.join(__dirname, '../../2026-04-15_13-36-07_items-export_MCVQLQMM.csv');
+  const csvPath = path.join(__dirname, '../../docPerso/2026-05-19_14-56-43_items-export_MCVQLQMM.csv');
   if (!fs.existsSync(csvPath)) {
     console.error(`❌ Fichier CSV introuvable : ${csvPath}`);
     process.exit(1);
@@ -370,6 +373,7 @@ async function main() {
         },
       });
 
+      const variantIsActive = product.showInStore;
       for (const variant of product.variants) {
         const varPrice = variant.price > 0 ? variant.price : displayPrice;
         await prisma.productVariant.upsert({
@@ -377,9 +381,10 @@ async function main() {
             productId_name: { productId: created.id, name: variant.name },
           },
           update: {
-            price:   varPrice,
-            stock:   variant.stock,
-            lotSize: inferLotSize(variant.name),
+            price:    varPrice,
+            stock:    variant.stock,
+            lotSize:  inferLotSize(variant.name),
+            isActive: variantIsActive,
           },
           create: {
             productId: created.id,
@@ -387,7 +392,7 @@ async function main() {
             lotSize:   inferLotSize(variant.name),
             price:     varPrice,
             stock:     variant.stock,
-            isActive:  true,
+            isActive:  variantIsActive,
           },
         });
       }
@@ -406,12 +411,33 @@ async function main() {
         create: { productId: created.id, minThreshold, status: stockStatus },
       });
 
-      console.log(`  ✅ ${product.name.trim()} (${product.variants.length} variante(s))`);
+      if (product.showInStore) {
+        console.log(`  ✅ ${product.name.trim()} (${product.variants.length} variante(s))`);
+      } else {
+        console.log(`  🚫 ${product.name.trim()} — désactivé (non visible en ligne sur SumUp)`);
+      }
       inserted++;
     } catch (err) {
       console.error(`  ❌ Erreur sur "${product.name}":`, err);
       skipped++;
     }
+  }
+
+  // ── Désactiver les produits SumUp supprimés du catalogue ──────────────────
+  const activeSumupIds = products
+    .filter(p => p.sumupId)
+    .map(p => p.sumupId.toLowerCase());
+
+  const deactivated = await prisma.productVariant.updateMany({
+    where: {
+      product: { id: { notIn: activeSumupIds } },
+      isActive: true,
+    },
+    data: { isActive: false },
+  });
+
+  if (deactivated.count > 0) {
+    console.log(`\n🗑️  ${deactivated.count} variante(s) désactivée(s) (produits retirés de SumUp ou non visibles en ligne)`);
   }
 
   console.log(`\n🎉 Seeding terminé : ${inserted} produits insérés/mis à jour, ${skipped} ignorés`);

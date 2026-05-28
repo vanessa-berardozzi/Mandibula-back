@@ -14,6 +14,10 @@ const createOrderSchema = z.object({
   shippingAddress: z.string().optional(),
   billingAddress: z.string().optional(),
   notes: z.string().optional(),
+  discount: z.number().min(0).optional(),
+  promoCode: z.string().optional(),
+  customerEmail: z.string().email().optional(),
+  customerPhone: z.string().optional(),
 });
 
 type CreateOrderInput = z.infer<typeof createOrderSchema>;
@@ -37,7 +41,7 @@ export class OrderController {
         });
       }
 
-      const { items, paymentMethod, shippingAddress, billingAddress, notes } = validation.data;
+      const { items, paymentMethod, shippingAddress, billingAddress, notes, discount: discountFromBody, promoCode } = validation.data;
 
       // Récupérer les variantes pour vérifier les prix et la disponibilité
       const variantIds = items.map((item) => item.variantId);
@@ -103,10 +107,10 @@ export class OrderController {
         };
       });
 
-      // TODO: Calculer les frais de port et taxes selon la logique métier
-      const shippingCost = 0;
-      const tax = null;
-      const total = subtotal + shippingCost;
+      // Frais de port fixes + remise promo
+      const SHIPPING_COST = 5.99;
+      const discount = discountFromBody ?? 0;
+      const total = subtotal - discount + SHIPPING_COST;
 
       // Créer la commande ET réserver le stock dans une transaction atomique
       const order = await prisma.$transaction(async (tx) => {
@@ -126,12 +130,12 @@ export class OrderController {
             paymentStatus: 'PENDING',
             paymentMethod,
             subtotal,
-            shippingCost,
-            tax,
+            shippingCost: SHIPPING_COST,
+            tax: null,
             total,
             shippingAddress,
             billingAddress,
-            notes,
+            notes: notes ?? (promoCode ? `Promo: ${promoCode}` : undefined),
             orderItems: {
               create: orderItems,
             },

@@ -28,9 +28,16 @@ const PROMO_CODES: PromoCode[] = [
 
 export class CartService {
   /**
-   * Récupère ou crée le panier de l'utilisateur
+   * Récupère ou crée le panier (utilisateur connecté ou anonyme via guestToken)
    */
-  static async getOrCreateCart(userId: string): Promise<CartWithItems> {
+  static async getOrCreateCart(
+    userId: string | undefined,
+    guestToken: string | undefined
+  ): Promise<CartWithItems> {
+    if (!userId && !guestToken) {
+      throw new Error('userId ou guestToken requis');
+    }
+
     const include = {
       items: {
         include: {
@@ -39,19 +46,87 @@ export class CartService {
       },
     } as const;
 
-    let cart = await prisma.cart.findUnique({ where: { userId }, include });
+    // Recherche par userId en priorité, sinon par guestToken
+    let cart: CartWithItems | null = null;
 
-    if (!cart) {
-      cart = await prisma.cart.create({ data: { userId }, include });
+    if (userId) {
+      cart = await prisma.cart.findUnique({ where: { userId }, include }) as CartWithItems | null;
+      if (!cart) {
+        cart = await prisma.cart.create({ data: { userId }, include }) as CartWithItems;
+      }
+    } else if (guestToken) {
+      cart = await prisma.cart.findUnique({ where: { guestToken }, include }) as CartWithItems | null;
+      if (!cart) {
+        cart = await prisma.cart.create({ data: { guestToken }, include }) as CartWithItems;
+      }
     }
 
     return cart as CartWithItems;
   }
 
   /**
+   * Fusionne le panier guest dans le panier de l'utilisateur connecté
+   * Appelé juste après la connexion/inscription
+   */
+  static async mergeGuestCart(guestToken: string, userId: string): Promise<void> {
+    const include = {
+      items: {
+        include: {
+          variant: { include: { product: true } },
+        },
+      },
+    } as const;
+
+    const guestCart = await prisma.cart.findUnique({ where: { guestToken }, include });
+    if (!guestCart || guestCart.items.length === 0) return;
+
+    // Récupérer ou créer le panier user
+    let userCart = await prisma.cart.findUnique({ where: { userId }, include }) as CartWithItems | null;
+    if (!userCart) {
+      userCart = await prisma.cart.create({ data: { userId }, include }) as CartWithItems;
+    }
+
+    // Fusionner les articles guest dans le panier user
+    for (const guestItem of guestCart.items) {
+      const existing = userCart.items.find((i) => i.variantId === guestItem.variantId);
+      const variant = await prisma.productVariant.findUnique({ where: { id: guestItem.variantId } });
+      if (!variant || !variant.isActive) continue;
+
+      const availableStock = variant.stock - variant.reservedStock;
+
+      if (existing) {
+        const newQty = Math.min(existing.quantity + guestItem.quantity, availableStock, 100);
+        await prisma.cartItem.update({
+          where: { id: existing.id },
+          data: { quantity: newQty, updatedAt: new Date() },
+        });
+      } else {
+        const qty = Math.min(guestItem.quantity, availableStock, 100);
+        if (qty > 0) {
+          await prisma.cartItem.create({
+            data: {
+              cartId: userCart.id,
+              variantId: guestItem.variantId,
+              quantity: qty,
+              price: guestItem.price,
+            },
+          });
+        }
+      }
+    }
+
+    // Supprimer le panier guest après la fusion
+    await prisma.cart.delete({ where: { id: guestCart.id } });
+  }
+
+  /**
    * Ajoute un produit au panier ou augmente sa quantité
    */
-  static async addToCart(userId: string, data: AddToCartRequest) {
+  static async addToCart(
+    userId: string | undefined,
+    guestToken: string | undefined,
+    data: AddToCartRequest
+  ) {
     const { variantId, quantity = 1 } = data;
 
     const variant = await prisma.productVariant.findUnique({
@@ -63,7 +138,7 @@ export class CartService {
     const availableStock = variant.stock - variant.reservedStock;
     if (availableStock < quantity) throw new Error(`Stock insuffisant : seulement ${availableStock} disponible(s)`);
 
-    const cart = await this.getOrCreateCart(userId);
+    const cart = await this.getOrCreateCart(userId, guestToken);
 
     const existing = await prisma.cartItem.findUnique({
       where: { cartId_variantId: { cartId: cart.id, variantId } },
@@ -90,12 +165,17 @@ export class CartService {
   /**
    * Met à jour la quantité d'un article
    */
-  static async updateCartItem(userId: string, variantId: string, data: UpdateCartItemRequest) {
+  static async updateCartItem(
+    userId: string | undefined,
+    guestToken: string | undefined,
+    variantId: string,
+    data: UpdateCartItemRequest
+  ) {
     const { quantity } = data;
 
-    if (quantity === 0) return this.removeFromCart(userId, variantId);
+    if (quantity === 0) return this.removeFromCart(userId, guestToken, variantId);
 
-    const cart = await this.getOrCreateCart(userId);
+    const cart = await this.getOrCreateCart(userId, guestToken);
 
     const cartItem = await prisma.cartItem.findUnique({
       where: { cartId_variantId: { cartId: cart.id, variantId } },
@@ -118,8 +198,12 @@ export class CartService {
   /**
    * Supprime un article du panier
    */
-  static async removeFromCart(userId: string, variantId: string) {
-    const cart = await this.getOrCreateCart(userId);
+  static async removeFromCart(
+    userId: string | undefined,
+    guestToken: string | undefined,
+    variantId: string
+  ) {
+    const cart = await this.getOrCreateCart(userId, guestToken);
 
     const cartItem = await prisma.cartItem.findUnique({
       where: { cartId_variantId: { cartId: cart.id, variantId } },
@@ -134,8 +218,11 @@ export class CartService {
   /**
    * Récupère le panier formaté avec totaux
    */
-  static async getCart(userId: string): Promise<CartResponse> {
-    const cart = await this.getOrCreateCart(userId);
+  static async getCart(
+    userId: string | undefined,
+    guestToken: string | undefined
+  ): Promise<CartResponse> {
+    const cart = await this.getOrCreateCart(userId, guestToken);
 
     const items = cart.items.map((item) => ({
       id: item.id,
@@ -164,6 +251,7 @@ export class CartService {
     return {
       id: cart.id,
       userId: cart.userId,
+      guestToken: cart.guestToken,
       items,
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
@@ -178,7 +266,7 @@ export class CartService {
    * Defense ultime contre tampering du client
    */
   static async validateCart(userId: string, promoCode?: string): Promise<CartValidationResponse> {
-    const cart = await this.getOrCreateCart(userId);
+    const cart = await this.getOrCreateCart(userId, undefined);
     const errors: string[] = [];
     const validatedItems: CartItemValidated[] = [];
 
@@ -289,11 +377,22 @@ export class CartService {
   }
 
   /**
-   * Vide complètement le panier
+   * Vide complètement le panier d'un utilisateur connecté
    */
   static async clearCart(userId: string) {
-    const cart = await this.getOrCreateCart(userId);
+    const cart = await this.getOrCreateCart(userId, undefined);
+    await prisma.cartItem.deleteMany({
+      where: { cartId: cart.id },
+    });
 
+    return { success: true, message: 'Panier vidé' };
+  }
+
+  /**
+   * Vide complètement le panier d'un visiteur anonyme
+   */
+  static async clearGuestCart(guestToken: string) {
+    const cart = await this.getOrCreateCart(undefined, guestToken);
     await prisma.cartItem.deleteMany({
       where: { cartId: cart.id },
     });

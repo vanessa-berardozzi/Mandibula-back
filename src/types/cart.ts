@@ -14,7 +14,8 @@ export interface CartWithItems extends Cart {
 
 export interface CartResponse {
   id: string;
-  userId: string;
+  userId?: string | null;
+  guestToken?: string | null;
   items: CartItemResponse[];
   createdAt: Date;
   updatedAt: Date;

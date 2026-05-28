@@ -282,9 +282,10 @@ model OrderItem {
 // Shopping Cart
 
 model Cart {
-  id     String @id @default(cuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String  @id @default(cuid())
+  userId     String? @unique
+  guestToken String? @unique
+  user       User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   items CartItem[]
 
@@ -292,6 +293,7 @@ model Cart {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  @@index([guestToken])
   @@map("cart")
 }
 

@@ -51,10 +51,29 @@ export const authMiddleware = async (
 };
 
 /**
- * Middleware de vérification du rôle ADMIN
- * Doit être utilisé APRÈS authMiddleware
- * @throws 403 si l'utilisateur n'est pas admin
+ * Middleware d'authentification optionnel
+ * Attache user/session à req si une session valide est présente, mais ne bloque pas sinon
+ * Utile pour les routes accessibles aux anonymes mais enrichies si connecté
  */
+export const optionalAuthMiddleware = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const session = await auth.api.getSession({
+      headers: req.headers,
+    });
+
+    if (session) {
+      req.user = session.user;
+      req.session = session.session;
+    }
+  } catch {
+    // Session invalide ou absente — on continue sans user
+  }
+  next();
+};
 export const adminMiddleware = async (
   req: Request,
   res: Response,
@@ -74,31 +93,6 @@ export const adminMiddleware = async (
       code: 'FORBIDDEN' 
     });
     return;
-  }
-  
-  next();
-};
-
-/**
- * Middleware optionnel qui ajoute user/session si disponible
- * Ne bloque jamais la requête (utile pour routes publiques avec auth optionnelle)
- */
-export const optionalAuthMiddleware = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const session = await auth.api.getSession({
-      headers: req.headers,
-    });
-    
-    if (session) {
-      req.user = session.user;
-      req.session = session.session;
-    }
-  } catch {
-    // Ignorer silencieusement les erreurs d'auth
   }
   
   next();

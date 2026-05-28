@@ -1,5 +1,5 @@
 import { Request, Response, Router } from 'express';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { validateBody } from '../middleware/validation';
 import { CartService } from '../services/cartService';
 import { addToCartSchema, updateCartItemSchema } from '../validations/cartSchemas';
@@ -7,18 +7,30 @@ import { addToCartSchema, updateCartItemSchema } from '../validations/cartSchema
 const router = Router();
 
 /**
- * Routes pour la gestion du panier
- * Toutes les routes sont protégées par authMiddleware (Better Auth cookies)
- * req.user et req.session sont automatiquement disponibles
+ * Extrait l'identifiant du panier depuis la requête :
+ * - userId si connecté (priorité)
+ * - guestToken via header X-Guest-Token sinon
  */
+function getCartIdentifier(req: Request): { userId?: string; guestToken?: string } {
+  const userId = req.user?.id;
+  const guestToken = typeof req.headers['x-guest-token'] === 'string'
+    ? req.headers['x-guest-token']
+    : undefined;
+  return { userId, guestToken };
+}
 
 /**
  * GET /api/cart
- * Récupère le panier de l'utilisateur connecté
+ * Récupère le panier (connecté ou anonyme)
  */
-router.get('/', authMiddleware, async (req: Request, res: Response) => {
+router.get('/', optionalAuthMiddleware, async (req: Request, res: Response) => {
   try {
-    const cart = await CartService.getCart(req.user!.id);
+    const { userId, guestToken } = getCartIdentifier(req);
+    if (!userId && !guestToken) {
+      res.status(400).json({ error: 'Identifiant panier requis (session ou X-Guest-Token)' });
+      return;
+    }
+    const cart = await CartService.getCart(userId, guestToken);
     res.status(200).json(cart);
   } catch (error) {
     console.error('Error fetching cart:', error);
@@ -28,15 +40,20 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
 /**
  * POST /api/cart/items
- * Ajoute un produit au panier
+ * Ajoute un produit au panier (connecté ou anonyme)
  */
 router.post(
   '/items',
-  authMiddleware,
+  optionalAuthMiddleware,
   validateBody(addToCartSchema),
   async (req: Request, res: Response) => {
     try {
-      const cartItem = await CartService.addToCart(req.user!.id, req.body);
+      const { userId, guestToken } = getCartIdentifier(req);
+      if (!userId && !guestToken) {
+        res.status(400).json({ error: 'Identifiant panier requis (session ou X-Guest-Token)' });
+        return;
+      }
+      const cartItem = await CartService.addToCart(userId, guestToken, req.body);
       res.status(201).json({ success: true, item: cartItem });
     } catch (error) {
       if (error instanceof Error) {
@@ -50,11 +67,11 @@ router.post(
 
 /**
  * PATCH /api/cart/items/:variantId
- * Met à jour la quantité d'un article
+ * Met à jour la quantité d'un article (connecté ou anonyme)
  */
 router.patch(
   '/items/:variantId',
-  authMiddleware,
+  optionalAuthMiddleware,
   validateBody(updateCartItemSchema),
   async (req: Request, res: Response) => {
     try {
@@ -65,7 +82,13 @@ router.patch(
         return;
       }
 
-      const cartItem = await CartService.updateCartItem(req.user!.id, variantId, req.body);
+      const { userId, guestToken } = getCartIdentifier(req);
+      if (!userId && !guestToken) {
+        res.status(400).json({ error: 'Identifiant panier requis (session ou X-Guest-Token)' });
+        return;
+      }
+
+      const cartItem = await CartService.updateCartItem(userId, guestToken, variantId, req.body);
       res.status(200).json({ success: true, item: cartItem });
     } catch (error) {
       if (error instanceof Error) {
@@ -79,9 +102,9 @@ router.patch(
 
 /**
  * DELETE /api/cart/items/:variantId
- * Supprime un article du panier
+ * Supprime un article du panier (connecté ou anonyme)
  */
-router.delete('/items/:variantId', authMiddleware, async (req: Request, res: Response) => {
+router.delete('/items/:variantId', optionalAuthMiddleware, async (req: Request, res: Response) => {
   try {
     const { variantId } = req.params;
 
@@ -90,7 +113,13 @@ router.delete('/items/:variantId', authMiddleware, async (req: Request, res: Res
       return;
     }
 
-    const result = await CartService.removeFromCart(req.user!.id, variantId);
+    const { userId, guestToken } = getCartIdentifier(req);
+    if (!userId && !guestToken) {
+      res.status(400).json({ error: 'Identifiant panier requis (session ou X-Guest-Token)' });
+      return;
+    }
+
+    const result = await CartService.removeFromCart(userId, guestToken, variantId);
     res.status(200).json(result);
   } catch (error) {
     if (error instanceof Error) {
@@ -126,9 +155,7 @@ router.post('/promo', authMiddleware, async (req: Request, res: Response) => {
 
 /**
  * POST /api/cart/validate
- * CRITIQUE: Valide le panier avant checkout
- * Recalcule TOUS les prix, taxes, stocks, promo codes
- * Defense ultime contre tampering du client
+ * CRITIQUE: Valide le panier avant checkout (requiert auth)
  */
 router.post('/validate', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -152,13 +179,45 @@ router.post('/validate', authMiddleware, async (req: Request, res: Response) => 
 });
 
 /**
- * DELETE /api/cart
- * Vide complètement le panier
+ * POST /api/cart/merge
+ * Fusionne le panier guest dans le panier utilisateur connecté
+ * Appelé juste après connexion/inscription quand un guestToken était actif
  */
-router.delete('/', authMiddleware, async (req: Request, res: Response) => {
+router.post('/merge', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const result = await CartService.clearCart(req.user!.id);
-    res.status(200).json(result);
+    const { guestToken } = req.body;
+
+    if (!guestToken || typeof guestToken !== 'string') {
+      res.status(400).json({ error: 'guestToken manquant' });
+      return;
+    }
+
+    await CartService.mergeGuestCart(guestToken, req.user!.id);
+    const cart = await CartService.getCart(req.user!.id, undefined);
+    res.status(200).json({ success: true, cart });
+  } catch (error) {
+    console.error('Error merging guest cart:', error);
+    res.status(500).json({ error: 'Erreur lors de la fusion du panier' });
+  }
+});
+
+/**
+ * DELETE /api/cart
+ * Vide complètement le panier (connecté ou anonyme)
+ */
+router.delete('/', optionalAuthMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { userId, guestToken } = getCartIdentifier(req);
+    if (!userId && !guestToken) {
+      res.status(400).json({ error: 'Identifiant panier requis (session ou X-Guest-Token)' });
+      return;
+    }
+    if (userId) {
+      await CartService.clearCart(userId);
+    } else {
+      await CartService.clearGuestCart(guestToken!);
+    }
+    res.status(200).json({ success: true, message: 'Panier vidé' });
   } catch (error) {
     console.error('Error clearing cart:', error);
     res.status(500).json({ error: 'Erreur lors du vidage du panier' });

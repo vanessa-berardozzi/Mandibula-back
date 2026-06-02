@@ -239,4 +239,61 @@ export class OrderController {
       res.status(500).json({ error: 'Erreur lors de la récupération des commandes' });
     }
   }
+
+  /**
+   * Supprimer une commande (seulement si elle est en attente de paiement)
+   * DELETE /api/orders/:orderId
+   */
+  static async deleteOrder(req: Request, res: Response) {
+    try {
+      const userId = req.user!.id;
+      const { orderId } = req.params;
+
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          orderItems: true,
+        },
+      });
+
+      if (!order) {
+        return res.status(404).json({ error: 'Commande introuvable' });
+      }
+
+      // Vérifier que la commande appartient à l'utilisateur
+      if (order.userId !== userId) {
+        return res.status(403).json({ error: 'Accès non autorisé' });
+      }
+
+      // Vérifier que la commande peut être annulée (seulement si paiement en attente ou annulée)
+      if (order.paymentStatus !== 'PENDING' && order.status !== 'CANCELLED') {
+        return res.status(400).json({ 
+          error: 'Cette commande ne peut pas être annulée. Seules les commandes en attente de paiement peuvent être supprimées.' 
+        });
+      }
+
+      // Supprimer la commande dans une transaction atomique
+      // 1. Libérer le stock réservé
+      // 2. Supprimer la commande (OrderItems seront cascadées)
+      await prisma.$transaction(async (tx) => {
+        // Libérer le stock réservé pour chaque variante
+        for (const item of order.orderItems) {
+          await tx.productVariant.update({
+            where: { id: item.variantId },
+            data: { reservedStock: { decrement: item.quantity } },
+          });
+        }
+
+        // Supprimer la commande (les OrderItems sont supprimés automatiquement via cascade)
+        await tx.order.delete({
+          where: { id: orderId },
+        });
+      });
+
+      res.json({ message: 'Commande supprimée avec succès' });
+    } catch (error) {
+      console.error('Error deleting order:', error);
+      res.status(500).json({ error: 'Erreur lors de la suppression de la commande' });
+    }
+  }
 }

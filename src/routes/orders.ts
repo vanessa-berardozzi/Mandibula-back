@@ -16,4 +16,7 @@ router.get('/', OrderController.getUserOrders);
 // Récupérer une commande par ID
 router.get('/:orderId', OrderController.getOrder);
 
+// Supprimer une commande
+router.delete('/:orderId', OrderController.deleteOrder);
+
 export default router;

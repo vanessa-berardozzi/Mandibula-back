@@ -133,9 +133,10 @@ model Adress {
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
+  name       String?
+  fullName   String?
   street     String
   city       String
-  state      String
   postalCode String
   country    String
 
@@ -267,7 +268,7 @@ model Order {
 model OrderItem {
   id      String @id @default(uuid())
   orderId String
-  order   Order  @relation(fields: [orderId], references: [id])
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   variantId String
   variant   ProductVariant @relation(fields: [variantId], references: [id])

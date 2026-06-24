@@ -10,6 +10,7 @@ import ordersRouter from './routes/orders';
 import productsRouter from './routes/products';
 import protectedRouter from './routes/protected';
 import webhooksRouter from './routes/webhooks';
+import wishlistRouter from './routes/wishlist';
 
 
 const app = express();
@@ -71,6 +72,7 @@ app.use('/api/products', productsRouter);   // Routes produits (publiques)
 app.use('/api/orders', ordersRouter);       // Routes commandes (protégées par authMiddleware)
 app.use('/api/checkout', checkoutRouter);   // Routes checkout (protégées par authMiddleware)
 app.use('/api/webhooks', webhooksRouter);   // Routes webhooks (publiques, appelées par providers)
+app.use('/api/wishlist', wishlistRouter);   // Routes favoris (protégées par authMiddleware)
 
 
 // catch 404 and forward to error handler

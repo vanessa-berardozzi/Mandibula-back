@@ -65,13 +65,20 @@ export const auth = betterAuth({
     },
   },
 
-  // Champs custom User (role pour admin)
+  // Champs custom User exposés dans la session
   user: {
     additionalFields: {
       role: {
         type: 'string',
         required: false,
         defaultValue: 'USER',
+      },
+      // Photo de profil uploadée par l'user (Cloudinary)
+      // Distincte de `image` qui est réservé aux providers OAuth
+      pictureProfile: {
+        type: 'string',
+        required: false,
+        input: false, // non settable via authClient.updateUser() — passe par notre endpoint
       },
     },
   },
@@ -122,8 +129,12 @@ export const auth = betterAuth({
     expiredIn: 7 * 24 * 60 * 60, // 7 days
     updateAge: 24 * 60 * 60, // 24 hours
     absoluteTimeout: 30 * 24 * 60 * 60, // 30 days
+    // cookieCache DÉSACTIVÉ : quand activé, better-auth encode l'objet user
+    // complet dans le cookie. Si image contient du base64, les headers HTTP
+    // dépassent la limite Node.js (HPE_HEADER_OVERFLOW).
+    // Le cookie est maintenant un simple token ID, la session est lue en DB.
     cookieCache: {
-      enabled: true,
+      enabled: false,
     },
   },
 

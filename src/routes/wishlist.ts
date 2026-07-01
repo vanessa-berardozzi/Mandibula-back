@@ -4,6 +4,12 @@ import { WishlistService } from '../services/wishlistService';
 
 const router = Router();
 
+// Middleware de debug
+router.use((req, res, next) => {
+  console.log('[Wishlist Route]', { method: req.method, path: req.path, url: req.url });
+  next();
+});
+
 // Toutes les routes wishlist nécessitent d'être connecté
 router.use(authMiddleware);
 
@@ -13,6 +19,7 @@ router.use(authMiddleware);
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
+    console.log('[Wishlist GET] userId:', req.user?.id);
     const items = await WishlistService.getWishlist(req.user!.id);
     res.json(items);
   } catch {

@@ -24,17 +24,24 @@ export const authMiddleware = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    console.log('[Auth Middleware] Checking session. Headers:', {
+      cookie: req.headers.cookie ? '***present***' : 'none',
+    });
+
     const session = await auth.api.getSession({
       headers: req.headers,
     });
 
     if (!session) {
+      console.log('[Auth Middleware] Session NOT found, returning 401');
       res.status(401).json({ 
         error: 'Non authentifié',
         code: 'UNAUTHORIZED' 
       });
       return;
     }
+
+    console.log('[Auth Middleware] Session valid for user:', session.user.id);
 
     // Attacher user et session à la requête
     req.user = session.user;

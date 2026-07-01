@@ -43,6 +43,32 @@ router.delete('/me', authMiddleware, async (req: Request, res: Response): Promis
 });
 
 /**
+ * DELETE /api/me/image
+ * Nettoie le champ `image` si il contient du base64 (reliquat de l'ancienne implémentation).
+ * Appeler une seule fois après migration vers Cloudinary, puis se déconnecter/reconnecter.
+ */
+router.delete('/me/image', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ error: 'Non authentifié' });
+      return;
+    }
+
+    const user = await UserService.findById(userId);
+    if (user?.image?.startsWith('data:')) {
+      await UserService.updateUser(userId, { image: undefined });
+      res.json({ message: 'Champ image nettoyé (base64 supprimé)', cleaned: true });
+    } else {
+      res.json({ message: 'Aucun base64 trouvé dans image', cleaned: false });
+    }
+  } catch (error) {
+    console.error('[Cleanup image]', error);
+    res.status(500).json({ error: 'Erreur lors du nettoyage' });
+  }
+});
+
+/**
  * GET /api/admin/dashboard
  * Route accessible uniquement aux admins
  */

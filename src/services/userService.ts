@@ -51,7 +51,10 @@ export class UserService {
   /**
    * Mettre à jour les informations d'un utilisateur
    */
-  static async updateUser(id: string, data: { name?: string; image?: string }): Promise<User> {
+  static async updateUser(
+    id: string,
+    data: { name?: string; image?: string; pictureProfile?: string }
+  ): Promise<User> {
     return prisma.user.update({
       where: { id },
       data,

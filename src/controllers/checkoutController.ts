@@ -152,44 +152,10 @@ export class CheckoutController {
         });
       }
 
-      // 3. Vérifier si un checkout existe déjà pour cette commande
-      if (order.sumupCheckoutId && paymentMethod === 'SUM_UP') {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[Checkout] Checkout existant trouvé:', order.sumupCheckoutId);
-        }
-        
-        try {
-          const provider = paymentService.getProvider(paymentMethod);
-          const status = await provider.checkPaymentStatus!(order.sumupCheckoutId);
-          
-          if (status === 'PENDING') {
-            // Le checkout existe et est toujours actif, on le réutilise
-            
-            // Récupérer les détails du checkout pour obtenir l'URL
-            const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-            const returnUrl = `${baseUrl}/commande/confirmation?orderId=${orderId}`;
-            
-            // SumUp ne retourne pas l'URL dans GET, donc on la reconstruit
-            // Format: https://pay.sumup.com/payments/{checkoutId}
-            const checkoutUrl = `https://pay.sumup.com/payments/${order.sumupCheckoutId}`;
-            
-            return res.status(200).json({
-              success: true,
-              checkoutUrl,
-              checkoutId: order.sumupCheckoutId,
-              reused: true,
-            });
-          }
-          
-          if (process.env.NODE_ENV === 'development') {
-            console.log('[Checkout] Checkout existant dans état final:', status);
-          }
-        } catch (error) {
-          if (process.env.NODE_ENV === 'development') {
-            console.warn('[Checkout] Erreur vérification checkout existant:', error);
-          }
-          // On continue pour créer un nouveau checkout
-        }
+      // 3. Pour les retries de paiement, créer toujours un nouveau checkout
+      // (l'ancien peut avoir expiré chez SumUp après ~30min)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Checkout] Création nouveau checkout (ancien peut être expiré)');
       }
 
       // 4. Créer un nouveau checkout

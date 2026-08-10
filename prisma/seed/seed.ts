@@ -22,6 +22,12 @@ type CategoryMapping = {
   isAnimal: boolean;
 };
 
+type CategoryResolutionContext = {
+  rawCategory: string;
+  descriptionHtml: string;
+  productName: string;
+};
+
 interface CsvVariant {
   name: string;
   price: number;
@@ -66,6 +72,24 @@ const DEFAULT_CATEGORY: CategoryMapping = {
   subName: 'Divers',      subSlug: 'divers',
   isAnimal: false,
 };
+
+const ANIMAL_CATEGORY_HINTS = new Set([
+  'isopodes',
+  'autres isopodes',
+  'ardentiella',
+  'cubaris',
+  'porcellio',
+  'laureola',
+  'troglodillo',
+  'araignees',
+  'araignées',
+  'myriapodes',
+  'blattes',
+  'coleopteres',
+  'coléoptères',
+  'mantes',
+  'collemboles',
+]);
 
 // ── Helpers HTML / texte ───────────────────────────────────────────────────────
 
@@ -172,6 +196,86 @@ function slugify(s: string): string {
     .replace(/[«»""'']/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+function normalizeKey(value: string): string {
+  return value.toLowerCase().trim()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function titleCaseWords(value: string): string {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function categoryLooksLikeAnimal(category: string, descriptionHtml: string, productName: string): boolean {
+  const normalizedCategory = normalizeKey(category);
+  if (ANIMAL_CATEGORY_HINTS.has(normalizedCategory)) return true;
+
+  const text = `${stripHtml(descriptionHtml)} ${productName}`.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  if (/temperature|humidite|elevage|espece|detritivore|substrat/.test(text)) {
+    return true;
+  }
+
+  return /isopod|araignee|myriapod|blatte|mante|coleoptere|invertebre/.test(text);
+}
+
+function toDynamicCategoryMapping(ctx: CategoryResolutionContext): CategoryMapping {
+  const normalized = normalizeKey(ctx.rawCategory);
+
+  if (!normalized) {
+    return DEFAULT_CATEGORY;
+  }
+
+  const isAnimal = categoryLooksLikeAnimal(ctx.rawCategory, ctx.descriptionHtml, ctx.productName);
+  const subName = titleCaseWords(normalized);
+
+  return {
+    rootName: isAnimal ? 'Animaux vivants' : 'Non-vivant',
+    rootSlug: isAnimal ? 'animaux-vivants' : 'non-vivant',
+    subName,
+    subSlug: slugify(normalized),
+    isAnimal,
+  };
+}
+
+function resolveCsvPath(): string {
+  const envPath = process.env.SUMUP_CSV_PATH?.trim();
+  if (envPath) {
+    const absolute = path.isAbsolute(envPath) ? envPath : path.resolve(process.cwd(), envPath);
+    if (!fs.existsSync(absolute)) {
+      throw new Error(`SUMUP_CSV_PATH est défini mais le fichier est introuvable: ${absolute}`);
+    }
+    return absolute;
+  }
+
+  const candidateDirs = [
+    path.join(__dirname, '../../docPerso'),
+    path.join(process.cwd(), 'docPerso'),
+    path.join(process.cwd(), 'prisma/seeds'),
+  ];
+
+  const files: string[] = [];
+  for (const dir of candidateDirs) {
+    if (!fs.existsSync(dir)) continue;
+    const matches = fs.readdirSync(dir)
+      .filter((name) => /items-export.*\.csv$/i.test(name))
+      .map((name) => path.join(dir, name));
+    files.push(...matches);
+  }
+
+  if (files.length === 0) {
+    throw new Error('Aucun CSV items-export trouvé. Fournis SUMUP_CSV_PATH pour indiquer le fichier à importer.');
+  }
+
+  files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  return files[0];
+}
+
 // ── Groupement des lignes CSV ──────────────────────────────────────────────────
 
 function groupCsvRows(records: Record<string, string>[]): CsvProduct[] {
@@ -254,20 +358,27 @@ function buildAccessoireAttributes(html: string, productName: string): Accessoir
 
 // ── Résolution du mapping catégorie ───────────────────────────────────────────
 
-function resolveCategoryMapping(sumupCategory: string): CategoryMapping {
-  const key = sumupCategory.trim().toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+function resolveCategoryMapping(sumupCategory: string, descriptionHtml: string, productName: string): CategoryMapping {
+  const key = normalizeKey(sumupCategory);
   for (const [k, v] of Object.entries(CATEGORY_MAP)) {
-    const nk = k.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const nk = normalizeKey(k);
     if (nk === key) return v;
   }
   // Correspondance partielle
   for (const [k, v] of Object.entries(CATEGORY_MAP)) {
-    const nk = k.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const nk = normalizeKey(k);
     if (key.includes(nk) || nk.includes(key)) return v;
   }
-  console.warn(`  ⚠️  Catégorie inconnue "${sumupCategory}" → Non-vivant/Divers`);
-  return DEFAULT_CATEGORY;
+
+  const dynamic = toDynamicCategoryMapping({
+    rawCategory: sumupCategory,
+    descriptionHtml,
+    productName,
+  });
+  console.warn(
+    `  ⚠️  Catégorie inconnue "${sumupCategory}" → création dynamique ${dynamic.rootName}/${dynamic.subName}`,
+  );
+  return dynamic;
 }
 
 // ── Seed principal ─────────────────────────────────────────────────────────────
@@ -275,11 +386,8 @@ function resolveCategoryMapping(sumupCategory: string): CategoryMapping {
 async function main() {
   console.log('🌱 Démarrage du seeding depuis le CSV SumUp...\n');
 
-  const csvPath = path.join(__dirname, '../../docPerso/2026-05-19_14-56-43_items-export_MCVQLQMM.csv');
-  if (!fs.existsSync(csvPath)) {
-    console.error(`❌ Fichier CSV introuvable : ${csvPath}`);
-    process.exit(1);
-  }
+  const csvPath = resolveCsvPath();
+  console.log(`📂 CSV utilisé: ${csvPath}`);
 
   const csvContent = fs.readFileSync(csvPath, 'utf-8');
   const records = parse(csvContent, {
@@ -334,7 +442,7 @@ async function main() {
       continue;
     }
 
-    const mapping    = resolveCategoryMapping(product.category);
+    const mapping    = resolveCategoryMapping(product.category, product.description || product.seoDescription, product.name);
     const categoryId = await getOrCreateCategory(mapping);
 
     const descHtml   = product.description || product.seoDescription;

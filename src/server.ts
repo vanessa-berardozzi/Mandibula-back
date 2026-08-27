@@ -2,6 +2,7 @@ import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import createError, { HttpError } from 'http-errors';
 import addressesRouter from './routes/addresses';
+import adminRouter from './routes/admin';
 import authRouter from './routes/auth';
 import cartRouter from './routes/cart';
 import checkoutRouter from './routes/checkout';
@@ -66,7 +67,8 @@ app.get('/api/test', (req, res) => {
 
 // Routes
 app.use('/', indexRouter);
-app.use('/api', protectedRouter);           // Routes protégées (/api/me, /api/admin/...)
+app.use('/api/admin', adminRouter);          // Surface admin (authMiddleware + adminMiddleware au niveau du routeur)
+app.use('/api', protectedRouter);           // Routes protégées (/api/me)
 app.use('/api/addresses', addressesRouter); // Routes adresses de livraison
 app.use('/api/cart', cartRouter);           // Routes panier (protégées par authMiddleware)
 app.use('/api/products', productsRouter);   // Routes produits (publiques)

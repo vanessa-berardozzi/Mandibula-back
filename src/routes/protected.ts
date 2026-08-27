@@ -1,5 +1,5 @@
 import { Request, Response, Router } from 'express';
-import { adminMiddleware, authMiddleware } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth';
 import { UserService } from '../services/userService';
 
 const router = Router();
@@ -67,21 +67,5 @@ router.delete('/me/image', authMiddleware, async (req: Request, res: Response): 
     res.status(500).json({ error: 'Erreur lors du nettoyage' });
   }
 });
-
-/**
- * GET /api/admin/dashboard
- * Route accessible uniquement aux admins
- */
-router.get(
-  '/admin/dashboard',
-  authMiddleware,
-  adminMiddleware,
-  (req: Request, res: Response): void => {
-    res.json({
-      message: 'Bienvenue sur le dashboard admin',
-      user: req.user,
-    });
-  }
-);
 
 export default router;

@@ -94,7 +94,7 @@ export const auth = betterAuth({
 
   // Rate limiting Better Auth (natif, stocké en BDD)
   rateLimit: {
-    enabled: false,
+    enabled: true,
     window: 900, // 15 minutes (en secondes)
     max: 5, // 5 requêtes max
     storage: 'database',

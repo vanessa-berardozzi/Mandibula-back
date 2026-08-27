@@ -21,8 +21,10 @@ enum Role {
 }
 
 enum OrderStatus {
-  PENDING
-  CONFIRMED
+  PENDING       // Nouvelle, pas encore payée
+  CONFIRMED     // Payée, à traiter
+  PREPARING     // En cours de préparation
+  HELD_WEATHER  // Expédition du vivant suspendue pour raison météo
   SHIPPED
   DELIVERED
   CANCELLED

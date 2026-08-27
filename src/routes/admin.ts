@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { AdminDashboardController } from '../controllers/admin/adminDashboardController';
+import { AdminOrderController } from '../controllers/admin/adminOrderController';
 import { adminMiddleware, authMiddleware } from '../middleware/auth';
 
 const router = Router();
@@ -27,5 +28,9 @@ router.get('/session', (req: Request, res: Response): void => {
 });
 
 router.get('/dashboard/stats', AdminDashboardController.getStats);
+
+router.get('/orders', AdminOrderController.list);
+router.get('/orders/:orderId', AdminOrderController.getOne);
+router.patch('/orders/:orderId/status', AdminOrderController.updateStatus);
 
 export default router;

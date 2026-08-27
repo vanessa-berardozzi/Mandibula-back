@@ -95,13 +95,18 @@ export const auth = betterAuth({
   // Rate limiting Better Auth (natif, stocké en BDD)
   rateLimit: {
     enabled: true,
-    window: 900, // 15 minutes (en secondes)
-    max: 5, // 5 requêtes max
+    // Limite globale volontairement large : elle s'applique à TOUS les appels Better Auth,
+    // y compris les vérifications de session déclenchées à chaque navigation.
+    window: 60, // 1 minute (en secondes)
+    max: 100,
     storage: 'database',
     modelName: 'rateLimit', // Nom exact du modèle Prisma
     customRules: {
+      // Seuls les points d'entrée sensibles restent strictement limités.
       '/sign-up/email': { window: 900, max: 5 },
       '/sign-in/email': { window: 900, max: 5 },
+      '/forget-password': { window: 900, max: 5 },
+      '/reset-password': { window: 900, max: 5 },
     },
   },
 

@@ -50,6 +50,16 @@ enum StockStatus {
   OUT_OF_STOCK
 }
 
+enum StockMovementType {
+  ENTRY               // arrivage fournisseur
+  SALE                // vente confirmée (paiement validé)
+  RESERVATION         // commande créée (PENDING) -> bloque le stock
+  RESERVATION_RELEASE // commande annulée/expirée avant paiement -> libère
+  LOSS                // mortalité, casse
+  ADJUSTMENT          // correction manuelle après inventaire physique
+  RETURN              // retour client (SAV)
+}
+
 // MODELS
 // User and auth
 
@@ -172,15 +182,17 @@ model Product {
   id          String  @id @default(uuid())
   name        String
   description String?
-  // Prix d'affichage (correspond généralement au prix de l'Unité)
   price       Decimal @db.Decimal(10, 2)
   images      String[]
 
-  // Attributs JSON flexibles par catégorie (origine, temp, humidité, etc.)
   attributes Json?
 
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id])
+
+  totalStock    Int @default(0) // Stock total de l'espèce (individus physiquement présents)
+  reservedStock Int @default(0) // Bloqué par des commandes PENDING non encore payées
+  // Stock vendable = totalStock - reservedStock (calculé côté service, jamais stocké)
 
   variants  ProductVariant[]
   stockInfo StockInfo?
@@ -195,11 +207,9 @@ model ProductVariant {
   productId String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  name    String  // "Unité", "Lot de 10", "Lot de 20"...
-  lotSize Int     @default(1) // Nombre d'individus/unités dans le lot
+  name    String  // "Lot de 5"
+  lotSize Int     @default(1) // Combien d'unités dans le lot
   price   Decimal @db.Decimal(10, 2)
-  stock         Int @default(0) // Stock physique disponible
-  reservedStock Int @default(0) // Réservé par des commandes PENDING (non payées)
   isActive Boolean @default(true)
 
   createdAt DateTime @default(now())
@@ -232,11 +242,21 @@ model StockMovement {
   variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
   productId String         // Dénormalisé pour requêtes dashboard sans jointure
 
-  type     String  // "IN", "OUT", "ADJUSTMENT"
-  quantity Int
-  reason   String? // ex: "Order #abc - Payment confirmed"
+  type     StockMovementType
+  quantity Int     // TOUJOURS en individus (déjà résolu : lotSize * nb de lots), jamais en nombre de lots
+  reason   String? // libre, pour ADJUSTMENT/LOSS uniquement (contexte humain)
+
+  // Traçabilité fiable : FK plutôt que texte libre dans `reason`
+  orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id])
+
+  // Pour une ENTRY : sert à valoriser le stock (CUMP), utile pour la compta
+  unitCost Decimal? @db.Decimal(10, 2)
 
   createdAt DateTime @default(now())
+
+  @@index([productId, createdAt])
+  @@index([orderId])
 }
 
 // Orders
@@ -264,10 +284,16 @@ model Order {
   // Instructions spéciales (ex: "expédition vivant", "retrait sur place")
   notes String?
 
+  // Si le paiement n'est pas confirmé avant cette date, un job libère
+  // le stock réservé (StockMovement RESERVATION_RELEASE) et peut annuler la commande.
+  reservationExpiresAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  orderItems OrderItem[]
+  orderItems     OrderItem[]
+  stockMovements StockMovement[]
+  invoice        Invoice?
 }
 
 model OrderItem {
@@ -333,4 +359,24 @@ model Wishlist {
   @@unique([userId, productId])
   @@index([userId])
   @@map("wishlist")
+}
+
+// Invoicing
+// Numérotation séquentielle SANS TROU distincte du n° de commande (exigence légale LU/UE)
+
+model Invoice {
+  id            String   @id @default(cuid())
+  orderId       String   @unique
+  order         Order    @relation(fields: [orderId], references: [id])
+  invoiceNumber String   @unique // ex: généré via une séquence Postgres dédiée
+  issuedAt      DateTime @default(now())
+
+  totalHT  Decimal @db.Decimal(10, 2)
+  totalVAT Decimal @db.Decimal(10, 2)
+  totalTTC Decimal @db.Decimal(10, 2)
+  vatRate  Decimal @db.Decimal(5, 2)
+
+  pdfUrl String?
+
+  @@map("invoice")
 }

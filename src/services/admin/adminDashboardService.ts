@@ -44,7 +44,47 @@ function resolveStartOfToday(): Date {
   return startOfToday;
 }
 
+export interface AdminStockAlert {
+  productId: string;
+  name: string;
+  currentStock: number;
+  minThreshold: number;
+  status: 'LOW_STOCK' | 'OUT_OF_STOCK';
+}
+
 export class AdminDashboardService {
+  /**
+   * Récupère les alertes de stock (produits avec stock bas ou épuisé)
+   * Basé sur Product.totalStock vs StockInfo.minThreshold
+   */
+  static async getStockAlerts(): Promise<AdminStockAlert[]> {
+    const alerts = await prisma.stockInfo.findMany({
+      include: { product: true },
+      orderBy: { updatedAt: 'desc' },
+      take: 100,
+    });
+
+    const result: AdminStockAlert[] = [];
+
+    for (const alert of alerts) {
+      const isAlert = alert.product.totalStock === 0 || alert.product.totalStock <= alert.minThreshold;
+
+      if (isAlert) {
+        const status = alert.product.totalStock === 0 ? 'OUT_OF_STOCK' : 'LOW_STOCK';
+        result.push({
+          productId: alert.product.id,
+          name: alert.product.name,
+          currentStock: alert.product.totalStock,
+          minThreshold: alert.minThreshold,
+          status,
+        });
+      }
+    }
+
+    result.sort((a, b) => a.currentStock - b.currentStock);
+    return result.slice(0, 50);
+  }
+
   /**
    * Top 3 produits les plus vendus (en quantité) sur la période, tous paiements confirmés.
    * OrderItem ne référence que la variante ; on résout produit + agrège par productId

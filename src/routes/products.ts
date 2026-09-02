@@ -13,8 +13,6 @@ const variantInclude = {
       name: true,
       lotSize: true,
       price: true,
-      stock: true,
-      reservedStock: true,
       isActive: true,
     },
   },
@@ -93,10 +91,8 @@ router.get('/variants/batch', async (req: Request, res: Response) => {
         id: true,
         name: true,
         price: true,
-        stock: true,
-        reservedStock: true,
         product: {
-          select: { id: true, name: true, images: true },
+          select: { id: true, name: true, images: true, totalStock: true },
         },
       },
     });

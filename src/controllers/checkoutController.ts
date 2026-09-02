@@ -33,51 +33,59 @@ async function confirmPayment(order: OrderWithItems, context: string): Promise<b
 
   await prisma.$transaction(async (tx) => {
     const current = await tx.order.findUnique({ where: { id: order.id } });
-    if (current?.paymentStatus !== 'PENDING') return; // déjà traité
+    if (current?.paymentStatus !== 'PENDING') return;
 
     await tx.order.update({
       where: { id: order.id },
       data: { paymentStatus: 'PAID', status: 'CONFIRMED' },
     });
 
+    // Grouper par productId pour décrémenter une seule fois
+    const quantitiesByProduct = new Map<string, { quantity: number; variantId: string }>();
+    
     for (const item of order.orderItems) {
-      const updatedVariant = await tx.productVariant.update({
+      const variant = await tx.productVariant.findUnique({
         where: { id: item.variantId },
-        data: {
-          stock:         { decrement: item.quantity },
-          reservedStock: { decrement: item.quantity },
-        },
+        select: { productId: true, lotSize: true },
+      });
+      if (!variant) continue;
+
+      const unitsToRemove = item.quantity * variant.lotSize;
+      quantitiesByProduct.set(item.variant.productId, { quantity: unitsToRemove, variantId: item.variantId });
+    }
+
+    // Décrémenter Product.totalStock + créer movements
+    for (const [productId, { quantity, variantId }] of quantitiesByProduct) {
+      await tx.product.update({
+        where: { id: productId },
+        data: { totalStock: { decrement: quantity } },
       });
 
-      // Mouvement de stock lié à la variante (source de vérité)
       await tx.stockMovement.create({
         data: {
-          variantId: item.variantId,
-          productId: item.variant.productId,
-          type:      'OUT',
-          quantity:  item.quantity,
-          reason:    `Order #${order.id.slice(0, 8)} - ${context}`,
+          variantId: variantId,
+          productId: productId,
+          type: 'SALE',
+          quantity: quantity,
+          reason: `Order #${order.id.slice(0, 8)} - ${context}`,
+          orderId: order.id,
         },
       });
 
-      // Mettre à jour le statut StockInfo si configuré pour ce produit
+      // Recalc status
       const stockInfo = await tx.stockInfo.findUnique({
-        where: { productId: item.variant.productId },
+        where: { productId },
       });
       if (stockInfo) {
-        // Recalculer le total stock du produit pour déterminer le nouveau statut
-        const sibling = await tx.productVariant.aggregate({
-          where:   { productId: item.variant.productId },
-          _sum:    { stock: true },
-        });
-        const totalStock = sibling._sum.stock ?? 0;
-        const newStatus =
-          totalStock === 0                    ? 'OUT_OF_STOCK' :
-          totalStock <= stockInfo.minThreshold ? 'LOW_STOCK'    :
-                                                 'IN_STOCK';
+        const product = await tx.product.findUnique({ where: { id: productId } });
+        const newStatus = !product ? 'IN_STOCK' :
+          product.totalStock === 0 ? 'OUT_OF_STOCK' :
+          product.totalStock <= stockInfo.minThreshold ? 'LOW_STOCK' :
+          'IN_STOCK';
+        
         await tx.stockInfo.update({
           where: { id: stockInfo.id },
-          data:  { status: newStatus },
+          data: { status: newStatus },
         });
       }
     }
@@ -89,9 +97,8 @@ async function confirmPayment(order: OrderWithItems, context: string): Promise<b
 }
 
 /**
- * Annule un paiement (FAILED / CANCELLED) :
- * - passe la commande au statut fourni
- * - libère uniquement la réservation (reservedStock) — le stock physique reste intact
+ * Annule un paiement (FAILED / CANCELLED)
+ * - passe la commande au statut fourni (pas de modification de stock)
  */
 async function cancelPayment(
   order: OrderWithItems,
@@ -105,13 +112,6 @@ async function cancelPayment(
       where: { id: order.id },
       data: { paymentStatus: paymentStatus as any, status: 'CANCELLED' },
     });
-
-    for (const item of order.orderItems) {
-      await tx.productVariant.update({
-        where: { id: item.variantId },
-        data:  { reservedStock: { decrement: item.quantity } },
-      });
-    }
   });
 }
 

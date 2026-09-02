@@ -31,8 +31,6 @@ export interface CartItemResponse {
     name: string;
     price: number;
     lotSize: number;
-    stock: number;
-    reservedStock: number;
     availableStock: number;
     product: {
       id: string;

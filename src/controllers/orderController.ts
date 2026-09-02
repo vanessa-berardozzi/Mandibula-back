@@ -53,6 +53,7 @@ export class OrderController {
           product: {
             select: {
               name: true,
+              totalStock: true,
             },
           },
         },
@@ -68,14 +69,14 @@ export class OrderController {
         });
       }
 
-      // Créer un map pour accès rapide aux variantes
+      // Créer un map pour accès rapide aux variantes + produits
       const variantMap = new Map(variants.map((v) => [v.id, v]));
 
-      // Vérifier le stock disponible (physique - réservé) pour chaque article
+      // Vérifier le stock total du produit pour chaque article
       const stockErrors: { variantName: string; productName: string; available: number; requested: number }[] = [];
       for (const item of items) {
         const variant = variantMap.get(item.variantId)!;
-        const available = variant.stock - variant.reservedStock;
+        const available = variant.product.totalStock;
         if (available < item.quantity) {
           stockErrors.push({
             variantName: variant.name,
@@ -112,16 +113,8 @@ export class OrderController {
       const discount = discountFromBody ?? 0;
       const total = subtotal - discount + SHIPPING_COST;
 
-      // Créer la commande ET réserver le stock dans une transaction atomique
+      // Créer la commande (pas de réservation, juste crée la cmd en PENDING)
       const order = await prisma.$transaction(async (tx) => {
-        // Réserver le stock pour chaque variante
-        for (const item of items) {
-          await tx.productVariant.update({
-            where: { id: item.variantId },
-            data: { reservedStock: { increment: item.quantity } },
-          });
-        }
-
         // Créer la commande avec les items
         return tx.order.create({
           data: {
@@ -272,19 +265,8 @@ export class OrderController {
         });
       }
 
-      // Supprimer la commande dans une transaction atomique
-      // 1. Libérer le stock réservé
-      // 2. Supprimer la commande (OrderItems seront cascadées)
+      // Supprimer la commande (pas de réservation à libérer)
       await prisma.$transaction(async (tx) => {
-        // Libérer le stock réservé pour chaque variante
-        for (const item of order.orderItems) {
-          await tx.productVariant.update({
-            where: { id: item.variantId },
-            data: { reservedStock: { decrement: item.quantity } },
-          });
-        }
-
-        // Supprimer la commande (les OrderItems sont supprimés automatiquement via cascade)
         await tx.order.delete({
           where: { id: orderId },
         });

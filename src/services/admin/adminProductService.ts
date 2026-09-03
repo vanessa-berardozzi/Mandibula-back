@@ -1,3 +1,4 @@
+import { PromotionType } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 
 export interface ProductDetailDto {
@@ -23,6 +24,9 @@ export interface ProductDetailDto {
     minThreshold: number;
     status: string;
   } | null;
+  promotionType?: PromotionType;
+  promotionValue?: number | null;
+  featured?: boolean;
 }
 
 export interface UpdateProductInput {
@@ -30,6 +34,9 @@ export interface UpdateProductInput {
   description?: string | null;
   price?: number;
   minThreshold?: number;
+  promotionType?: PromotionType;
+  promotionValue?: number | null;
+  featured?: boolean;
 }
 
 export class AdminProductService {
@@ -90,6 +97,9 @@ export class AdminProductService {
             status: product.stockInfo.status,
           }
         : null,
+      promotionType: product.promotionType,
+      promotionValue: product.promotionValue ? Number(product.promotionValue) : null,
+      featured: product.featured,
     };
   }
 
@@ -112,6 +122,9 @@ export class AdminProductService {
     await prisma.product.update({
       where: { id: productId },
       data: {
+        ...(input.promotionType && { promotionType: input.promotionType }),
+        ...(input.promotionValue !== undefined && { promotionValue: input.promotionValue }),
+        ...(input.featured !== undefined && { featured: input.featured }),
         ...(input.name && { name: input.name }),
         ...(input.description !== undefined && { description: input.description }),
         ...(input.price && { price: input.price }),

@@ -60,6 +60,12 @@ enum StockMovementType {
   RETURN              // retour client (SAV)
 }
 
+enum PromotionType {
+  NONE
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
 // MODELS
 // User and auth
 
@@ -70,7 +76,7 @@ model User {
   name           String    
   image          String? 
   pictureProfile String?
-  lastConnection DateTime?
+  lastConnection DateTime  @default(now())
   role           Role      @default(USER)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -193,6 +199,11 @@ model Product {
   totalStock    Int @default(0) // Stock total de l'espèce (individus physiquement présents)
   reservedStock Int @default(0) // Bloqué par des commandes PENDING non encore payées
   // Stock vendable = totalStock - reservedStock (calculé côté service, jamais stocké)
+
+  // Promotions
+  promotionType  PromotionType @default(NONE)
+  promotionValue Decimal?      @db.Decimal(10, 2) // Montant de la réduction (% ou €)
+  featured       Boolean       @default(false) // Afficher dans "sélection du moment"
 
   variants  ProductVariant[]
   stockInfo StockInfo?

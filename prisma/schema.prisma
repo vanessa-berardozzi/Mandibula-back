@@ -303,6 +303,9 @@ model Order {
   paymentStatus PaymentStatus @default(PENDING)
   paymentMethod PaymentMethod
 
+  vatRegime  String // "DOMESTIC3 | "EU_B2B_DESTINATION ...
+  vatDetailsJson Json  
+
   // Référence de transaction retournée par SumUp après paiement
   sumupCheckoutId String? @unique
 

@@ -11,6 +11,7 @@ import ordersRouter from './routes/orders';
 import productsRouter from './routes/products';
 import protectedRouter from './routes/protected';
 import uploadRouter from './routes/upload';
+import { vatErrorHandler, vatRouter } from './routes/vat';
 import webhooksRouter from './routes/webhooks';
 import wishlistRouter from './routes/wishlist';
 
@@ -77,6 +78,8 @@ app.use('/api/checkout', checkoutRouter);   // Routes checkout (protégées par 
 app.use('/api/webhooks', webhooksRouter);   // Routes webhooks (publiques, appelées par providers)
 app.use('/api/upload', uploadRouter);       // Upload fichiers vers Cloudinary (protégé par authMiddleware)
 app.use('/api/wishlist', wishlistRouter);   // Routes favoris (protégées par authMiddleware)
+app.use('/api/vat', vatRouter);             // Routes VAT (publiques)
+app.use(vatErrorHandler);
 
 
 // catch 404 and forward to error handler

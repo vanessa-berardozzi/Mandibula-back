@@ -66,6 +66,21 @@ enum PromotionType {
   FIXED_AMOUNT
 }
 
+/// Catégorie fiscale d'un produit. À faire correspondre à vos vraies
+/// catégories métier (un arthropode vivant et une boîte d'élevage n'ont
+/// pas forcément le même taux selon le pays de destination).
+enum ProductVatCategory {
+  STANDARD_GOODS // matériel d'élevage, accessoires, terrariums...
+  LIVE_ANIMALS   // arthropodes vivants
+}
+
+enum VatRateType {
+  STANDARD
+  REDUCED
+  SUPER_REDUCED
+  ZERO
+}
+
 // MODELS
 // User and auth
 
@@ -202,6 +217,8 @@ model Product {
 
   shippingWeight Decimal? @db.Decimal(10, 2) // En grammes, sert au calcul des frais de port
   isPublished    Boolean  @default(true) // Visible dans le catalogue public
+
+  vatCategory ProductVatCategory @default(STANDARD_GOODS)
 
   // Promotions
   promotionType  PromotionType @default(NONE)
@@ -398,4 +415,57 @@ model Invoice {
   pdfUrl String?
 
   @@map("invoice")
+}
+
+// VAT / Tax
+
+model Country {
+  /// Code ISO 3166-1 alpha-2 (FR, BE, DE, LU...)
+  code       String    @id @db.Char(2)
+  name       String
+  isEuMember Boolean   @default(true)
+  vatRates   VatRate[]
+
+  @@map("countries")
+}
+
+/// Table de référence des taux de TVA par pays et par catégorie de produit.
+/// Historisée via validFrom/validTo pour pouvoir modifier un taux à une
+/// date donnée sans perdre l'historique (utile en cas de contrôle).
+model VatRate {
+  id              String             @id @default(cuid())
+  countryCode     String
+  country         Country            @relation(fields: [countryCode], references: [code])
+  productCategory ProductVatCategory
+  rateType        VatRateType
+  /// Taux en pourcentage, ex: 20.00 pour 20%
+  rate            Decimal            @db.Decimal(5, 2)
+  validFrom       DateTime           @default(now())
+  validTo         DateTime?
+  /// Référence/source de la donnée (utile pour audit — ex: "impots.gouv.fr, MAJ 2026-01")
+  source          String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@unique([countryCode, productCategory, validFrom])
+  @@index([countryCode, productCategory])
+  @@map("vat_rates")
+}
+
+/// Cache des vérifications de numéro de TVA intracommunautaire (VIES).
+/// Sert de preuve en cas de contrôle (obligation de justifier le B2B)
+/// et évite de spammer l'API européenne à chaque commande.
+model VatNumberCheck {
+  id             String   @id @default(cuid())
+  vatNumber      String   @unique
+  countryCode    String
+  isValid        Boolean
+  companyName    String?
+  /// Identifiant de consultation renvoyé par VIES (preuve officielle)
+  consultationId String?
+  checkedAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  @@index([vatNumber])
+  @@map("vat_number_checks")
 }

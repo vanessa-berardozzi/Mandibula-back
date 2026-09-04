@@ -5,6 +5,7 @@ import { prisma } from '../../lib/prisma';
 const adjustStockSchema = z.object({
   quantity: z.number().int('La quantité doit être un entier').min(-10000).max(10000),
   reason: z.string().min(3).max(500).optional(),
+  type: z.enum(['ENTRY', 'LOSS', 'ADJUSTMENT']).optional(),
 });
 
 export class AdminStockController {
@@ -27,7 +28,12 @@ export class AdminStockController {
       return;
     }
 
-    const { quantity, reason } = validation.data;
+    const { quantity, reason, type } = validation.data;
+
+    if (quantity === 0) {
+      res.status(400).json({ error: 'La quantité ne peut pas être nulle' });
+      return;
+    }
 
     try {
       const product = await prisma.product.findUnique({
@@ -56,40 +62,39 @@ export class AdminStockController {
           select: { id: true, name: true, totalStock: true },
         });
 
-        // Récupérer la première variante active pour enregistrer le mouvement
+        // Le mouvement est rattaché à une variante : on prend la première disponible.
         const firstVariant = await tx.productVariant.findFirst({
-          where: { productId, isActive: true },
+          where: { productId },
+          orderBy: [{ isActive: 'desc' }, { createdAt: 'asc' }],
           select: { id: true },
         });
 
         if (firstVariant) {
-          const isIncrease = quantity > 0;
           await tx.stockMovement.create({
             data: {
               productId: productId,
               variantId: firstVariant.id,
-              type: 'ADJUSTMENT',
+              type: type ?? (quantity > 0 ? 'ENTRY' : 'ADJUSTMENT'),
               quantity: Math.abs(quantity),
               reason: reason || `Ajustement manuel par ${req.user?.name || 'Admin'}`,
             },
           });
         }
 
-        // Recalc status
         const stockInfo = await tx.stockInfo.findUnique({
           where: { productId },
         });
-        if (stockInfo) {
-          const newStatus =
-            newStock === 0 ? 'OUT_OF_STOCK' :
-            newStock <= stockInfo.minThreshold ? 'LOW_STOCK' :
-            'IN_STOCK';
+        const minThreshold = stockInfo?.minThreshold ?? 5;
+        const newStatus =
+          newStock === 0 ? 'OUT_OF_STOCK' :
+          newStock <= minThreshold ? 'LOW_STOCK' :
+          'IN_STOCK';
 
-          await tx.stockInfo.update({
-            where: { id: stockInfo.id },
-            data: { status: newStatus },
-          });
-        }
+        await tx.stockInfo.upsert({
+          where: { productId },
+          create: { productId, minThreshold, status: newStatus },
+          update: { status: newStatus },
+        });
 
         return updated;
       });

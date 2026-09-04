@@ -35,6 +35,7 @@ export class AdminProductController {
             price: true,
             images: true,
             totalStock: true,
+            isPublished: true,
             category: {
               select: { id: true, name: true },
             },
@@ -64,6 +65,7 @@ export class AdminProductController {
           variantCount: product.variants.length,
           stockStatus: product.stockInfo?.status || 'UNKNOWN',
           minThreshold: product.stockInfo?.minThreshold || 5,
+          isPublished: product.isPublished,
         })),
         total,
         page: pageNum,

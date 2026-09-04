@@ -9,6 +9,7 @@ import type {
     PromoValidationResponse,
     UpdateCartItemRequest,
 } from '../types/cart';
+import { calculateDiscountedPrice } from '../utils/pricing';
 import { StockService } from './stockService';
 
 /**
@@ -158,11 +159,26 @@ export class CartService {
     // Vérifier la variante
     const variant = await prisma.productVariant.findUnique({
       where: { id: variantId },
-      select: { id: true, productId: true, isActive: true, price: true, lotSize: true },
+      select: {
+        id: true,
+        productId: true,
+        isActive: true,
+        price: true,
+        lotSize: true,
+        product: { select: { promotionType: true, promotionValue: true } },
+      },
     });
 
     if (!variant) throw new Error('Variante non trouvée');
     if (!variant.isActive) throw new Error('Cette variante n\'est plus disponible');
+
+    // Prix appliqué = prix de la variante avec la promotion active du produit (calcul serveur)
+    const promotionValue = variant.product.promotionValue ? Number(variant.product.promotionValue) : null;
+    const effectivePrice = calculateDiscountedPrice(
+      Number(variant.price),
+      variant.product.promotionType,
+      promotionValue
+    );
 
     // Vérifier la disponibilité RÉELLE (avec StockService) - stock exprimé en individus
     const availableStock = await StockService.getAvailableStock(variant.productId);
@@ -210,7 +226,7 @@ export class CartService {
       }
 
       return prisma.cartItem.create({
-        data: { cartId: cart.id, variantId, quantity, price: variant.price },
+        data: { cartId: cart.id, variantId, quantity, price: effectivePrice },
         include: { variant: { include: { product: true } } },
       });
     }
@@ -397,7 +413,11 @@ export class CartService {
     const variantIds = cart.items.map((item) => item.variantId);
     const variants = await prisma.productVariant.findMany({
       where: { id: { in: variantIds } },
-      include: { product: { select: { id: true, name: true } } },
+      include: {
+        product: {
+          select: { id: true, name: true, promotionType: true, promotionValue: true },
+        },
+      },
     });
 
     const variantMap = new Map(variants.map((v) => [v.id, v]));
@@ -432,7 +452,11 @@ export class CartService {
         continue;
       }
 
-      const currentPrice = Number(variant.price);
+      const currentPrice = calculateDiscountedPrice(
+        Number(variant.price),
+        variant.product.promotionType,
+        variant.product.promotionValue ? Number(variant.product.promotionValue) : null
+      );
       const savedPrice = Number(item.price);
       if (currentPrice !== savedPrice) {
         console.warn(

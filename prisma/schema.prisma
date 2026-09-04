@@ -200,6 +200,9 @@ model Product {
   reservedStock Int @default(0) // Bloqué par des commandes PENDING non encore payées
   // Stock vendable = totalStock - reservedStock (calculé côté service, jamais stocké)
 
+  shippingWeight Decimal? @db.Decimal(10, 2) // En grammes, sert au calcul des frais de port
+  isPublished    Boolean  @default(true) // Visible dans le catalogue public
+
   // Promotions
   promotionType  PromotionType @default(NONE)
   promotionValue Decimal?      @db.Decimal(10, 2) // Montant de la réduction (% ou €)

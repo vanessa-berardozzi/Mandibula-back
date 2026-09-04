@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
+import { calculateDiscountedPrice } from '../utils/pricing';
 
 // Validation du body pour créer une commande
 const createOrderSchema = z.object({
@@ -54,6 +55,8 @@ export class OrderController {
             select: {
               name: true,
               totalStock: true,
+              promotionType: true,
+              promotionValue: true,
             },
           },
         },
@@ -97,13 +100,15 @@ export class OrderController {
       let subtotal = 0;
       const orderItems = items.map((item) => {
         const variant = variantMap.get(item.variantId)!;
-        const price = parseFloat(variant.price.toString());
+        const basePrice = parseFloat(variant.price.toString());
+        const promotionValue = variant.product.promotionValue ? Number(variant.product.promotionValue) : null;
+        const price = calculateDiscountedPrice(basePrice, variant.product.promotionType, promotionValue);
         subtotal += price * item.quantity;
 
         return {
           variantId: item.variantId,
           quantity: item.quantity,
-          price: variant.price,
+          price,
           variantName: variant.name,
         };
       });

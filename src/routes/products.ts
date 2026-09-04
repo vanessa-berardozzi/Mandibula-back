@@ -1,6 +1,7 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, PromotionType } from '@prisma/client';
 import { Request, Response, Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { calculateDiscountedPrice } from '../utils/pricing';
 
 const router = Router();
 
@@ -21,18 +22,35 @@ const variantInclude = {
   },
 } as const;
 
-/** Le stock est porté par le produit : chaque variante hérite du stock vendable. */
+/**
+ * Le stock est porté par le produit : chaque variante hérite du stock vendable.
+ * La promotion (si active) est portée par le produit et s'applique à toutes ses variantes.
+ */
 function withAvailableStock<
-  T extends { totalStock: number; reservedStock: number; variants: unknown[] },
+  T extends {
+    totalStock: number;
+    reservedStock: number;
+    promotionType: PromotionType;
+    promotionValue: Prisma.Decimal | null;
+    variants: { price: Prisma.Decimal | number }[];
+  },
 >(product: T) {
   const availableStock = Math.max(0, product.totalStock - product.reservedStock);
+  const promotionValue = product.promotionValue ? Number(product.promotionValue) : null;
+
   return {
     ...product,
     availableStock,
-    variants: product.variants.map((variant) => ({
-      ...(variant as Record<string, unknown>),
-      availableStock,
-    })),
+    variants: product.variants.map((variant) => {
+      const originalPrice = Number(variant.price);
+      const price = calculateDiscountedPrice(originalPrice, product.promotionType, promotionValue);
+      return {
+        ...(variant as Record<string, unknown>),
+        availableStock,
+        price,
+        originalPrice: price < originalPrice ? originalPrice : undefined,
+      };
+    }),
   };
 }
 
@@ -49,6 +67,7 @@ router.get('/', async (req: Request, res: Response) => {
     const skip     = (pageNum - 1) * limitNum;
 
     const where: Prisma.ProductWhereInput = {
+      isPublished: true,
       variants: { some: { isActive: true } },
     };
     if (categoryId) where.categoryId = categoryId as string;
@@ -107,15 +126,30 @@ router.get('/variants/batch', async (req: Request, res: Response) => {
         name: true,
         price: true,
         product: {
-          select: { id: true, name: true, images: true, totalStock: true, reservedStock: true },
+          select: {
+            id: true,
+            name: true,
+            images: true,
+            totalStock: true,
+            reservedStock: true,
+            promotionType: true,
+            promotionValue: true,
+          },
         },
       },
     });
     res.json(
-      variants.map((variant) => ({
-        ...variant,
-        availableStock: Math.max(0, variant.product.totalStock - variant.product.reservedStock),
-      })),
+      variants.map((variant) => {
+        const originalPrice = Number(variant.price);
+        const promotionValue = variant.product.promotionValue ? Number(variant.product.promotionValue) : null;
+        const price = calculateDiscountedPrice(originalPrice, variant.product.promotionType, promotionValue);
+        return {
+          ...variant,
+          price,
+          originalPrice: price < originalPrice ? originalPrice : undefined,
+          availableStock: Math.max(0, variant.product.totalStock - variant.product.reservedStock),
+        };
+      }),
     );
   } catch (error) {
     console.error('Error fetching variants batch:', error);
@@ -139,7 +173,10 @@ router.get('/:id', async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Produit non trouvé' });
       return;
     }
-
+    if (!product.isPublished) {
+      res.status(404).json({ error: 'Produit non trouvé' });
+      return;
+    }
     res.json(withAvailableStock(product));
   } catch (error) {
     console.error('Error fetching product:', error);
@@ -171,6 +208,7 @@ router.get('/category/:slug', async (req: Request, res: Response) => {
     const products = await prisma.product.findMany({
       where: {
         categoryId: { in: categoryIds },
+        isPublished: true,
         variants: { some: { isActive: true } },
       },
       include: variantInclude,

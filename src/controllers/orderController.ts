@@ -1,24 +1,30 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
+import { calculateVat } from '../services/vat/vatCalculationService';
 import { calculateDiscountedPrice } from '../utils/pricing';
 
 // Validation du body pour créer une commande
 const createOrderSchema = z.object({
-  items: z.array(
-    z.object({
-      variantId: z.string().uuid(),
-      quantity: z.number().int().positive(),
-    })
-  ).min(1, 'Le panier ne peut pas être vide'),
+  items: z
+    .array(
+      z.object({
+        variantId: z.string().uuid(),
+        quantity: z.number().int().positive(),
+      })
+    )
+    .min(1, 'Le panier ne peut pas être vide'),
   paymentMethod: z.enum(['SUM_UP', 'PAYPAL', 'BANK_TRANSFER', 'CASH']),
   shippingAddress: z.string().optional(),
+  shippingCountryCode: z.string().length(2), // ← NOUVEAU, obligatoire
   billingAddress: z.string().optional(),
   notes: z.string().optional(),
   discount: z.number().min(0).optional(),
   promoCode: z.string().optional(),
   customerEmail: z.string().email().optional(),
   customerPhone: z.string().optional(),
+  // Pour plus tard, si vous gérez le B2B :
+  // vatNumber: z.string().optional(),
 });
 
 type CreateOrderInput = z.infer<typeof createOrderSchema>;
@@ -42,14 +48,20 @@ export class OrderController {
         });
       }
 
-      const { items, paymentMethod, shippingAddress, billingAddress, notes, discount: discountFromBody, promoCode } = validation.data;
+      const {
+        items,
+        paymentMethod,
+        shippingAddress,
+        shippingCountryCode,
+        billingAddress,
+        notes,
+        discount: discountFromBody,
+        promoCode,
+      } = validation.data;
 
-      // Récupérer les variantes pour vérifier les prix et la disponibilité
-      const variantIds = items.map((item) => item.variantId);
+      // Récupérer les variantes — AJOUT de vatCategory dans le select produit
       const variants = await prisma.productVariant.findMany({
-        where: {
-          id: { in: variantIds },
-        },
+        where: { id: { in: items.map((item) => item.variantId) } },
         include: {
           product: {
             select: {
@@ -57,12 +69,14 @@ export class OrderController {
               totalStock: true,
               promotionType: true,
               promotionValue: true,
+              vatCategory: true, // ← NOUVEAU
             },
           },
         },
       });
 
       // Vérifier que toutes les variantes existent
+      const variantIds = items.map((item) => item.variantId);
       if (variants.length !== variantIds.length) {
         const foundIds = variants.map((v) => v.id);
         const missingIds = variantIds.filter((id) => !foundIds.includes(id));
@@ -76,7 +90,12 @@ export class OrderController {
       const variantMap = new Map(variants.map((v) => [v.id, v]));
 
       // Vérifier le stock total du produit pour chaque article (stock en individus, quantité en lots)
-      const stockErrors: { variantName: string; productName: string; available: number; requested: number }[] = [];
+      const stockErrors: {
+        variantName: string;
+        productName: string;
+        available: number;
+        requested: number;
+      }[] = [];
       for (const item of items) {
         const variant = variantMap.get(item.variantId)!;
         const availableLots = Math.floor(variant.product.totalStock / variant.lotSize);
@@ -101,8 +120,14 @@ export class OrderController {
       const orderItems = items.map((item) => {
         const variant = variantMap.get(item.variantId)!;
         const basePrice = parseFloat(variant.price.toString());
-        const promotionValue = variant.product.promotionValue ? Number(variant.product.promotionValue) : null;
-        const price = calculateDiscountedPrice(basePrice, variant.product.promotionType, promotionValue);
+        const promotionValue = variant.product.promotionValue
+          ? Number(variant.product.promotionValue)
+          : null;
+        const price = calculateDiscountedPrice(
+          basePrice,
+          variant.product.promotionType,
+          promotionValue
+        );
         subtotal += price * item.quantity;
 
         return {
@@ -113,33 +138,62 @@ export class OrderController {
         };
       });
 
-      // Frais de port fixes + remise promo
       const SHIPPING_COST = 5.99;
       const discount = discountFromBody ?? 0;
-      const total = subtotal - discount + SHIPPING_COST;
+  
+
+      // --- Calcul TVA réel, côté serveur ----------------------------------
+      const vatItems = items.map((item) => {
+        const variant = variantMap.get(item.variantId)!;
+        const basePrice = parseFloat(variant.price.toString());
+        const promotionValue = variant.product.promotionValue
+          ? Number(variant.product.promotionValue)
+          : null;
+        const discountedPrice = calculateDiscountedPrice(
+          basePrice,
+          variant.product.promotionType,
+          promotionValue
+        );
+
+        return {
+          productId: variant.id,
+          productCategory: variant.product.vatCategory,
+          unitPriceExclVatCents: Math.round(discountedPrice * 100), // euros -> centimes
+          quantity: item.quantity,
+        };
+      });
+
+      const vatResult = await calculateVat({
+        items: vatItems,
+        shipToCountry: shippingCountryCode,
+        buyerType: 'B2C', // à faire évoluer si vous ajoutez un flux B2B plus tard
+      });
+
+      const vatAmount = vatResult.totals.totalVatCents / 100; // retour en euros pour rester cohérent avec le reste du schéma
+      const total = subtotal - discount + SHIPPING_COST + vatAmount;
 
       // Créer la commande (pas de réservation, juste crée la cmd en PENDING)
-      const order = await prisma.$transaction(async (tx) => {
-        // Créer la commande avec les items
-        return tx.order.create({
-          data: {
-            userId,
-            status: 'PENDING',
-            paymentStatus: 'PENDING',
-            paymentMethod,
-            subtotal,
-            shippingCost: SHIPPING_COST,
-            tax: null,
-            total,
-            shippingAddress,
-            billingAddress,
-            notes: notes ?? (promoCode ? `Promo: ${promoCode}` : undefined),
-            orderItems: {
-              create: orderItems,
-            },
-          },
-        });
-      });
+     const order = await prisma.$transaction(async (tx) => {
+       return tx.order.create({
+         data: {
+           userId,
+           status: 'PENDING',
+           paymentStatus: 'PENDING',
+           paymentMethod,
+           subtotal,
+           shippingCost: SHIPPING_COST,
+           tax: vatAmount,
+           total,
+           shippingAddress,
+           billingAddress,
+           vatDetailsJson: vatResult as any,
+           vatRegime: vatResult.regime,
+
+           notes: notes ?? (promoCode ? `Promo: ${promoCode}` : undefined),
+           orderItems: { create: orderItems },
+         },
+       });
+     });
 
       res.status(201).json({
         orderId: order.id,

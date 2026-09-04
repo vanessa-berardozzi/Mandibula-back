@@ -140,7 +140,6 @@ export class OrderController {
 
       const SHIPPING_COST = 5.99;
       const discount = discountFromBody ?? 0;
-  
 
       // --- Calcul TVA réel, côté serveur ----------------------------------
       const vatItems = items.map((item) => {
@@ -173,27 +172,27 @@ export class OrderController {
       const total = subtotal - discount + SHIPPING_COST + vatAmount;
 
       // Créer la commande (pas de réservation, juste crée la cmd en PENDING)
-     const order = await prisma.$transaction(async (tx) => {
-       return tx.order.create({
-         data: {
-           userId,
-           status: 'PENDING',
-           paymentStatus: 'PENDING',
-           paymentMethod,
-           subtotal,
-           shippingCost: SHIPPING_COST,
-           tax: vatAmount,
-           total,
-           shippingAddress,
-           billingAddress,
-           vatDetailsJson: vatResult as any,
-           vatRegime: vatResult.regime,
+      const order = await prisma.$transaction(async (tx) => {
+        return tx.order.create({
+          data: {
+            userId,
+            status: 'PENDING',
+            paymentStatus: 'PENDING',
+            paymentMethod,
+            subtotal,
+            shippingCost: SHIPPING_COST,
+            tax: vatAmount,
+            total,
+            shippingAddress,
+            billingAddress,
+            vatDetailsJson: vatResult as any,
+            vatRegime: vatResult.regime,
 
-           notes: notes ?? (promoCode ? `Promo: ${promoCode}` : undefined),
-           orderItems: { create: orderItems },
-         },
-       });
-     });
+            notes: notes ?? (promoCode ? `Promo: ${promoCode}` : undefined),
+            orderItems: { create: orderItems },
+          },
+        });
+      });
 
       res.status(201).json({
         orderId: order.id,
@@ -246,6 +245,7 @@ export class OrderController {
         return res.status(403).json({ error: 'Accès non autorisé' });
       }
 
+      // 💡 vatDetailsJson est déjà un objet JS ici, prêt à être envoyé !
       res.json(order);
     } catch (error) {
       console.error('Error fetching order:', error);
@@ -319,8 +319,9 @@ export class OrderController {
 
       // Vérifier que la commande peut être annulée (seulement si paiement en attente ou annulée)
       if (order.paymentStatus !== 'PENDING' && order.status !== 'CANCELLED') {
-        return res.status(400).json({ 
-          error: 'Cette commande ne peut pas être annulée. Seules les commandes en attente de paiement peuvent être supprimées.' 
+        return res.status(400).json({
+          error:
+            'Cette commande ne peut pas être annulée. Seules les commandes en attente de paiement peuvent être supprimées.',
         });
       }
 

@@ -21,6 +21,40 @@ interface CacheEntry {
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const cache = new Map<string, CacheEntry>();
 
+const FALLBACK_EU_VAT_RATES: Record<string, number> = {
+  AT: 20,
+  BE: 21,
+  BG: 20,
+  CY: 19,
+  CZ: 21,
+  DE: 19,
+  DK: 25,
+  EE: 24,
+  ES: 21,
+  FI: 25.5,
+  FR: 20,
+  GR: 24,
+  HR: 25,
+  HU: 27,
+  IE: 23,
+  IT: 22,
+  LT: 21,
+  LU: 17,
+  LV: 21,
+  MT: 18,
+  NL: 21,
+  PL: 23,
+  PT: 23,
+  RO: 21,
+  SE: 25,
+  SI: 22,
+  SK: 23,
+};
+
+const FALLBACK_LIVE_ANIMALS_VAT_RATES: Partial<Record<string, ResolvedVatRate>> = {
+  NL: { rate: 9, rateType: 'REDUCED' },
+};
+
 function buildCacheKey(
   countryCode: string,
   productCategory: ProductVatCategory,
@@ -34,16 +68,39 @@ function buildCacheKey(
 }
 
 export async function isKnownCountry(countryCode: string): Promise<boolean> {
-  const country = await prisma.country.findUnique({ where: { code: countryCode } });
+  const normalizedCountryCode = countryCode.toUpperCase();
+  const country = await prisma.country.findUnique({ where: { code: normalizedCountryCode } });
+  if (!country && normalizedCountryCode in FALLBACK_EU_VAT_RATES) return true;
   return Boolean(country);
 }
 
 export async function getCountry(countryCode: string) {
-  const country = await prisma.country.findUnique({ where: { code: countryCode } });
+  const normalizedCountryCode = countryCode.toUpperCase();
+  const country = await prisma.country.findUnique({ where: { code: normalizedCountryCode } });
   if (!country) {
-    throw new UnsupportedCountryError(countryCode);
+    if (normalizedCountryCode in FALLBACK_EU_VAT_RATES) {
+      return { code: normalizedCountryCode, name: normalizedCountryCode, isEuMember: true };
+    }
+    throw new UnsupportedCountryError(normalizedCountryCode);
   }
   return country;
+}
+
+function getFallbackVatRate(
+  countryCode: string,
+  productCategory: ProductVatCategory
+): ResolvedVatRate | null {
+  const normalizedCountryCode = countryCode.toUpperCase();
+
+  if (productCategory === 'LIVE_ANIMALS') {
+    const liveAnimalsRate = FALLBACK_LIVE_ANIMALS_VAT_RATES[normalizedCountryCode];
+    if (liveAnimalsRate) return liveAnimalsRate;
+  }
+
+  const standardRate = FALLBACK_EU_VAT_RATES[normalizedCountryCode];
+  if (standardRate === undefined) return null;
+
+  return { rate: standardRate, rateType: 'STANDARD' };
 }
 
 /**
@@ -57,7 +114,8 @@ export async function getVatRate(
   productCategory: ProductVatCategory,
   atDate: Date = new Date()
 ): Promise<ResolvedVatRate> {
-  const key = buildCacheKey(countryCode, productCategory, atDate);
+  const normalizedCountryCode = countryCode.toUpperCase();
+  const key = buildCacheKey(normalizedCountryCode, productCategory, atDate);
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.value;
@@ -65,7 +123,7 @@ export async function getVatRate(
 
   const record = await prisma.vatRate.findFirst({
     where: {
-      countryCode,
+      countryCode: normalizedCountryCode,
       productCategory,
       validFrom: { lte: atDate },
       OR: [{ validTo: null }, { validTo: { gte: atDate } }],
@@ -74,7 +132,12 @@ export async function getVatRate(
   });
 
   if (!record) {
-    throw new VatRateNotFoundError(countryCode, productCategory);
+    const fallback = getFallbackVatRate(normalizedCountryCode, productCategory);
+    if (fallback) {
+      cache.set(key, { value: fallback, expiresAt: Date.now() + CACHE_TTL_MS });
+      return fallback;
+    }
+    throw new VatRateNotFoundError(normalizedCountryCode, productCategory);
   }
 
   const resolved: ResolvedVatRate = {

@@ -157,7 +157,7 @@ export class OrderController {
         return {
           productId: variant.id,
           productCategory: variant.product.vatCategory,
-          unitPriceExclVatCents: Math.round(discountedPrice * 100), // euros -> centimes
+          unitPriceInclVatCents: Math.round(discountedPrice * 100),
           quantity: item.quantity,
         };
       });
@@ -169,7 +169,7 @@ export class OrderController {
       });
 
       const vatAmount = vatResult.totals.totalVatCents / 100; // retour en euros pour rester cohérent avec le reste du schéma
-      const total = subtotal - discount + SHIPPING_COST + vatAmount;
+  const total = subtotal - discount + SHIPPING_COST;
 
       // Créer la commande (pas de réservation, juste crée la cmd en PENDING)
       const order = await prisma.$transaction(async (tx) => {

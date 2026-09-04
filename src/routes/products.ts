@@ -130,6 +130,7 @@ router.get('/variants/batch', async (req: Request, res: Response) => {
             id: true,
             name: true,
             images: true,
+            vatCategory: true,
             totalStock: true,
             reservedStock: true,
             promotionType: true,

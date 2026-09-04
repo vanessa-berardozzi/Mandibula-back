@@ -1,7 +1,7 @@
 import type {
-  VatCalculationRequest,
-  VatCalculationResult,
-  VatLineResult
+    VatCalculationRequest,
+    VatCalculationResult,
+    VatLineResult
 } from '../../types/vat';
 import { InvalidCartError } from './vat.errors';
 import { getVatRate, isKnownCountry } from './vatRates.repository';
@@ -18,7 +18,7 @@ function assertValidRequest(req: VatCalculationRequest): void {
     if (item.quantity <= 0) {
       throw new InvalidCartError(`Quantité invalide pour le produit ${item.productId}.`);
     }
-    if (item.unitPriceExclVatCents < 0) {
+    if (item.unitPriceInclVatCents < 0) {
       throw new InvalidCartError(`Prix invalide pour le produit ${item.productId}.`);
     }
   }
@@ -34,17 +34,18 @@ function computeExemptLines(
   vatRateType: VatLineResult['vatRateType']
 ): VatLineResult[] {
   return req.items.map((item) => {
-    const lineTotalExclVatCents = item.unitPriceExclVatCents * item.quantity;
+    const lineTotalInclVatCents = item.unitPriceInclVatCents * item.quantity;
     return {
       productId: item.productId,
       productCategory: item.productCategory,
       quantity: item.quantity,
-      unitPriceExclVatCents: item.unitPriceExclVatCents,
-      lineTotalExclVatCents,
+      unitPriceInclVatCents: item.unitPriceInclVatCents,
+      unitPriceExclVatCents: item.unitPriceInclVatCents,
+      lineTotalExclVatCents: lineTotalInclVatCents,
       vatRate: 0,
       vatRateType,
       vatAmountCents: 0,
-      lineTotalInclVatCents: lineTotalExclVatCents,
+      lineTotalInclVatCents,
     };
   });
 }
@@ -58,21 +59,21 @@ async function computeTaxedLines(
   for (const item of req.items) {
     const { rate, rateType } = await getVatRate(countryForRate, item.productCategory);
 
-    const lineTotalExclVatCents = item.unitPriceExclVatCents * item.quantity;
-    // Arrondi au centime le plus proche — jamais de calcul flottant "libre"
-    // sur des montants monétaires.
-    const vatAmountCents = Math.round((lineTotalExclVatCents * rate) / 100);
+    const lineTotalInclVatCents = item.unitPriceInclVatCents * item.quantity;
+    const vatAmountCents = Math.round((lineTotalInclVatCents * rate) / 100);
+    const lineTotalExclVatCents = lineTotalInclVatCents - vatAmountCents;
 
     lines.push({
       productId: item.productId,
       productCategory: item.productCategory,
       quantity: item.quantity,
-      unitPriceExclVatCents: item.unitPriceExclVatCents,
+      unitPriceInclVatCents: item.unitPriceInclVatCents,
+      unitPriceExclVatCents: Math.round(lineTotalExclVatCents / item.quantity),
       lineTotalExclVatCents,
       vatRate: rate,
       vatRateType: rateType,
       vatAmountCents,
-      lineTotalInclVatCents: lineTotalExclVatCents + vatAmountCents,
+      lineTotalInclVatCents,
     });
   }
 

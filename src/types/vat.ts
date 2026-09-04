@@ -6,8 +6,8 @@ export interface CartItemInput {
   /** Identifiant produit, pour traçabilité dans la réponse */
   productId: string;
   productCategory: ProductVatCategory;
-  /** Prix unitaire HORS TAXE, en centimes, pour éviter les erreurs de float */
-  unitPriceExclVatCents: number;
+  /** Prix unitaire TTC affiché au client, en centimes */
+  unitPriceInclVatCents: number;
   quantity: number;
 }
 
@@ -24,6 +24,7 @@ export interface VatLineResult {
   productId: string;
   productCategory: ProductVatCategory;
   quantity: number;
+  unitPriceInclVatCents: number;
   unitPriceExclVatCents: number;
   lineTotalExclVatCents: number;
   vatRate: number;

@@ -267,7 +267,9 @@ model StockMovement {
   createdAt DateTime @default(now())
 
   @@index([productId, createdAt])
+  @@index([productId, type]) // ← CRITIQUE: pour calcul rapide stock disponible
   @@index([orderId])
+  @@index([createdAt]) // ← Pour logs/audit
 }
 
 // Orders
@@ -305,6 +307,9 @@ model Order {
   orderItems     OrderItem[]
   stockMovements StockMovement[]
   invoice        Invoice?
+
+  @@index([userId, paymentStatus]) // ← Pour lister les commandes actives d'un user
+  @@index([paymentStatus, createdAt]) // ← Pour dashboard/analytics
 }
 
 model OrderItem {

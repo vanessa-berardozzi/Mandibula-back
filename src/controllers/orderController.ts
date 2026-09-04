@@ -72,16 +72,16 @@ export class OrderController {
       // Créer un map pour accès rapide aux variantes + produits
       const variantMap = new Map(variants.map((v) => [v.id, v]));
 
-      // Vérifier le stock total du produit pour chaque article
+      // Vérifier le stock total du produit pour chaque article (stock en individus, quantité en lots)
       const stockErrors: { variantName: string; productName: string; available: number; requested: number }[] = [];
       for (const item of items) {
         const variant = variantMap.get(item.variantId)!;
-        const available = variant.product.totalStock;
-        if (available < item.quantity) {
+        const availableLots = Math.floor(variant.product.totalStock / variant.lotSize);
+        if (availableLots < item.quantity) {
           stockErrors.push({
             variantName: variant.name,
             productName: variant.product.name,
-            available,
+            available: availableLots,
             requested: item.quantity,
           });
         }

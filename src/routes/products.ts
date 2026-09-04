@@ -21,6 +21,21 @@ const variantInclude = {
   },
 } as const;
 
+/** Le stock est porté par le produit : chaque variante hérite du stock vendable. */
+function withAvailableStock<
+  T extends { totalStock: number; reservedStock: number; variants: unknown[] },
+>(product: T) {
+  const availableStock = Math.max(0, product.totalStock - product.reservedStock);
+  return {
+    ...product,
+    availableStock,
+    variants: product.variants.map((variant) => ({
+      ...(variant as Record<string, unknown>),
+      availableStock,
+    })),
+  };
+}
+
 /**
  * GET /api/products
  * Liste des produits avec variants et catégorie
@@ -53,7 +68,7 @@ router.get('/', async (req: Request, res: Response) => {
     ]);
 
     res.json({
-      data: products,
+      data: products.map(withAvailableStock),
       total,
       page: pageNum,
       limit: limitNum,
@@ -92,11 +107,16 @@ router.get('/variants/batch', async (req: Request, res: Response) => {
         name: true,
         price: true,
         product: {
-          select: { id: true, name: true, images: true, totalStock: true },
+          select: { id: true, name: true, images: true, totalStock: true, reservedStock: true },
         },
       },
     });
-    res.json(variants);
+    res.json(
+      variants.map((variant) => ({
+        ...variant,
+        availableStock: Math.max(0, variant.product.totalStock - variant.product.reservedStock),
+      })),
+    );
   } catch (error) {
     console.error('Error fetching variants batch:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération des variantes' });
@@ -120,7 +140,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       return;
     }
 
-    res.json(product);
+    res.json(withAvailableStock(product));
   } catch (error) {
     console.error('Error fetching product:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération du produit' });
@@ -157,7 +177,7 @@ router.get('/category/:slug', async (req: Request, res: Response) => {
       orderBy: { name: 'asc' },
     });
 
-    res.json({ category, data: products, total: products.length });
+    res.json({ category, data: products.map(withAvailableStock), total: products.length });
   } catch (error) {
     console.error('Error fetching products by category:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération des produits' });

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { CartService } from '../services/cartService';
 import { paymentService } from '../services/payment/payment.service';
+import { StockService } from '../services/stockService';
 import type { CreateCheckoutInput } from '../validations/checkout.validation';
 
 // ── Types internes ────────────────────────────────────────────────────────────
@@ -20,99 +21,18 @@ type OrderWithItems = {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Confirme un paiement dans une transaction atomique :
- * - passe la commande en CONFIRMED/PAID
- * - décrémente stock + reservedStock sur chaque variante
- * - crée un StockMovement par variante
- * - met à jour le statut StockInfo (LOW_STOCK / OUT_OF_STOCK) si existant
- *
- * Inclut une garde idempotente : ne fait rien si la commande n'est plus PENDING.
+ * Confirme un paiement = Utilise StockService pour gérer les réservations
+ * Idempotent: ne fait rien si déjà PAID
  */
-async function confirmPayment(order: OrderWithItems, context: string): Promise<boolean> {
-  let processed = false;
-
-  await prisma.$transaction(async (tx) => {
-    const current = await tx.order.findUnique({ where: { id: order.id } });
-    if (current?.paymentStatus !== 'PENDING') return;
-
-    await tx.order.update({
-      where: { id: order.id },
-      data: { paymentStatus: 'PAID', status: 'CONFIRMED' },
-    });
-
-    // Grouper par productId pour décrémenter une seule fois
-    const quantitiesByProduct = new Map<string, { quantity: number; variantId: string }>();
-    
-    for (const item of order.orderItems) {
-      const variant = await tx.productVariant.findUnique({
-        where: { id: item.variantId },
-        select: { productId: true, lotSize: true },
-      });
-      if (!variant) continue;
-
-      const unitsToRemove = item.quantity * variant.lotSize;
-      quantitiesByProduct.set(item.variant.productId, { quantity: unitsToRemove, variantId: item.variantId });
-    }
-
-    // Décrémenter Product.totalStock + créer movements
-    for (const [productId, { quantity, variantId }] of quantitiesByProduct) {
-      await tx.product.update({
-        where: { id: productId },
-        data: { totalStock: { decrement: quantity } },
-      });
-
-      await tx.stockMovement.create({
-        data: {
-          variantId: variantId,
-          productId: productId,
-          type: 'SALE',
-          quantity: quantity,
-          reason: `Order #${order.id.slice(0, 8)} - ${context}`,
-          orderId: order.id,
-        },
-      });
-
-      // Recalc status
-      const stockInfo = await tx.stockInfo.findUnique({
-        where: { productId },
-      });
-      if (stockInfo) {
-        const product = await tx.product.findUnique({ where: { id: productId } });
-        const newStatus = !product ? 'IN_STOCK' :
-          product.totalStock === 0 ? 'OUT_OF_STOCK' :
-          product.totalStock <= stockInfo.minThreshold ? 'LOW_STOCK' :
-          'IN_STOCK';
-        
-        await tx.stockInfo.update({
-          where: { id: stockInfo.id },
-          data: { status: newStatus },
-        });
-      }
-    }
-
-    processed = true;
-  });
-
-  return processed;
+async function confirmPayment(orderId: string, context: string): Promise<boolean> {
+  return await StockService.confirmOrder(orderId);
 }
 
 /**
- * Annule un paiement (FAILED / CANCELLED)
- * - passe la commande au statut fourni (pas de modification de stock)
+ * Annule un paiement = Libère les réservations via StockService
  */
-async function cancelPayment(
-  order: OrderWithItems,
-  paymentStatus: string,
-): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    const current = await tx.order.findUnique({ where: { id: order.id } });
-    if (current?.paymentStatus !== 'PENDING') return;
-
-    await tx.order.update({
-      where: { id: order.id },
-      data: { paymentStatus: paymentStatus as any, status: 'CANCELLED' },
-    });
-  });
+async function cancelPayment(orderId: string, reason: string): Promise<void> {
+  await StockService.cancelOrder(orderId, reason);
 }
 
 // ── Controller ────────────────────────────────────────────────────────────────
@@ -223,10 +143,10 @@ export class CheckoutController {
         console.log('[Webhook] Checkout reference:', checkoutReference, '→ Order ID:', orderId);
       }
 
-      // Récupérer la commande avec ses items et variants
-      const order = await prisma.order.findFirst({
+      // Récupérer la commande
+      const order = await prisma.order.findUnique({
         where: { id: orderId },
-        include: { orderItems: { include: { variant: true } } },
+        select: { id: true, userId: true, paymentStatus: true },
       });
 
       if (!order) {
@@ -240,13 +160,13 @@ export class CheckoutController {
       }
 
       if (webhookResult.paymentStatus === 'PAID') {
-        await confirmPayment(order, 'Payment confirmed');
+        await confirmPayment(orderId, 'Payment confirmed');
         await CartService.clearCart(order.userId).catch((err) =>
           console.error('[Webhook] Erreur vidage panier:', err)
         );
         console.log('[Webhook] Paiement confirmé, stock mis à jour, panier vidé:', orderId);
       } else {
-        await cancelPayment(order, webhookResult.paymentStatus);
+        await cancelPayment(orderId, `Payment ${webhookResult.paymentStatus}`);
         console.log('[Webhook] Paiement échoué, réservation libérée:', orderId, webhookResult.paymentStatus);
       }
 
@@ -290,7 +210,7 @@ export class CheckoutController {
           const sumupStatus = await provider.checkPaymentStatus!(order.sumupCheckoutId);
 
           if (sumupStatus === 'PAID') {
-            const processed = await confirmPayment(order, 'Payment confirmed (fallback)');
+            const processed = await confirmPayment(orderId, 'Payment confirmed (fallback)');
             if (processed) {
               await CartService.clearCart(order.userId).catch((err) =>
                 console.error('[CheckOrderStatus] Erreur vidage panier:', err)
@@ -306,7 +226,7 @@ export class CheckoutController {
           }
 
           if (sumupStatus === 'FAILED') {
-            await cancelPayment(order, 'FAILED');
+            await cancelPayment(orderId, 'FAILED');
             return res.status(200).json({
               orderId: order.id,
               status: 'CANCELLED',

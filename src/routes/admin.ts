@@ -1,10 +1,11 @@
 import { NextFunction, Request, Response, Router } from 'express';
+import { AdminCustomerController } from '../controllers/admin/adminCustomerController';
 import { AdminDashboardController } from '../controllers/admin/adminDashboardController';
 import { AdminOrderController } from '../controllers/admin/adminOrderController';
 import { AdminProductController } from '../controllers/admin/adminProductController';
 import { AdminStockController } from '../controllers/admin/adminStockController';
-import { adminMiddleware, authMiddleware } from '../middleware/auth';
 import { prisma } from '../lib/prisma';
+import { adminMiddleware, authMiddleware } from '../middleware/auth';
 
 const router = Router();
 
@@ -46,6 +47,8 @@ router.patch('/orders/:orderId/status', AdminOrderController.updateStatus);
 router.get('/products', AdminProductController.list);
 router.get('/products/:productId', AdminProductController.getOne);
 router.patch('/products/:productId', AdminProductController.update);
+
+router.get('/customers', AdminCustomerController.list);
 
 /**
  * GET /api/admin/categories

@@ -56,7 +56,7 @@ export interface AdminOrdersPage {
   pages: number;
 }
 
-const orderInclude = {
+export const orderInclude = {
   user: { select: { name: true, email: true } },
   orderItems: {
     include: {
@@ -75,9 +75,9 @@ const orderInclude = {
   },
 } satisfies Prisma.OrderInclude;
 
-type OrderWithRelations = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
+export type OrderWithRelations = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
 
-function toListItem(order: OrderWithRelations): AdminOrderListItem {
+export function toListItem(order: OrderWithRelations): AdminOrderListItem {
   const items = order.orderItems.map((item) => ({
     id: item.id,
     productName: item.variant.product.name,

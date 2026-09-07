@@ -330,9 +330,12 @@ model Order {
   orderItems     OrderItem[]
   stockMovements StockMovement[]
   invoice        Invoice?
+  promotionId    String?
+  promotion      Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
 
   @@index([userId, paymentStatus]) // ← Pour lister les commandes actives d'un user
   @@index([paymentStatus, createdAt]) // ← Pour dashboard/analytics
+  @@index([promotionId])
 }
 
 model OrderItem {
@@ -471,4 +474,25 @@ model VatNumberCheck {
 
   @@index([vatNumber])
   @@map("vat_number_checks")
+}
+
+/// Codes promotionnels appliquables aux commandes
+model Promotion {
+  id           String    @id @default(cuid())
+  code         String    @unique @db.VarChar(50)
+  type         String    // "percent" ou "fixed"
+  value        Decimal   @db.Decimal(10, 2)
+  minimumOrder Decimal   @default(0) @db.Decimal(10, 2)
+  usageLimit   Int?      // null = illimitée
+  usageCount   Int       @default(0)
+  startsAt     DateTime?
+  endsAt       DateTime?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  orders       Order[]
+
+  @@index([code])
+  @@index([isActive])
+  @@map("promotions")
 }

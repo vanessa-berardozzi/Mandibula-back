@@ -5,7 +5,6 @@ import type {
     CartResponse,
     CartValidationResponse,
     CartWithItems,
-    PromoCode,
     PromoValidationResponse,
     UpdateCartItemRequest,
 } from '../types/cart';
@@ -25,14 +24,6 @@ import { StockService } from './stockService';
 
 const TAX_RATE = 0.2; // 20% TVA
 const SHIPPING_COST = 5.99; // Frais de port fixes
-
-/** Catalogue des codes promo actifs */
-const PROMO_CODES: PromoCode[] = [
-  { code: 'MANDIBULA10', description: '10% sur votre commande', type: 'percent', value: 10 },
-  { code: 'BIENVENUE', description: '5€ de réduction', type: 'fixed', value: 5, minSubtotal: 20 },
-  { code: 'ISOPODE20', description: '20% sur votre commande', type: 'percent', value: 20, minSubtotal: 50 },
-  { code: 'LIVRAISON', description: 'Frais de port offerts', type: 'fixed', value: 5.99 },
-];
 
 export class CartService {
   /**
@@ -482,7 +473,7 @@ export class CartService {
     let discount = 0;
     let appliedPromoCode: string | undefined;
     if (promoCode) {
-      const promoResult = this.validatePromoCode(promoCode, subtotal);
+      const promoResult = await this.validatePromoCode(promoCode, subtotal);
       if (promoResult.valid && promoResult.discountAmount !== undefined) {
         discount = promoResult.discountAmount;
         appliedPromoCode = promoResult.code;
@@ -511,31 +502,44 @@ export class CartService {
   /**
    * Valide un code promo par rapport au sous-total
    */
-  static validatePromoCode(code: string, subtotal: number): PromoValidationResponse {
-    const promo = PROMO_CODES.find((p) => p.code === code.toUpperCase().trim());
+  static async validatePromoCode(code: string, subtotal: number): Promise<PromoValidationResponse> {
+    const now = new Date();
+    const promo = await prisma.promotion.findUnique({
+      where: { code: code.toUpperCase().trim() },
+    });
 
-    if (!promo) {
+    if (!promo || !promo.isActive || (promo.startsAt && promo.startsAt > now) || (promo.endsAt && promo.endsAt < now)) {
       return { valid: false, error: 'Code promo invalide ou expiré' };
     }
 
-    if (promo.minSubtotal && subtotal < promo.minSubtotal) {
+    if (promo.usageLimit !== null && promo.usageCount >= promo.usageLimit) {
+      return { valid: false, error: 'Ce code promo a atteint sa limite d’utilisation' };
+    }
+
+    if (promo.type !== 'percent' && promo.type !== 'fixed') {
+      return { valid: false, error: 'Type de code promo invalide' };
+    }
+
+    const minimumOrder = Number(promo.minimumOrder);
+    if (subtotal < minimumOrder) {
       return {
         valid: false,
-        error: `Ce code nécessite un minimum d'achat de ${promo.minSubtotal.toFixed(2)}€`,
+        error: `Ce code nécessite un minimum d'achat de ${minimumOrder.toFixed(2)}€`,
       };
     }
 
+    const value = Number(promo.value);
     const discountAmount =
       promo.type === 'percent'
-        ? Math.round(subtotal * (promo.value / 100) * 100) / 100
-        : Math.min(promo.value, subtotal);
+        ? Math.round(subtotal * (value / 100) * 100) / 100
+        : Math.min(value, subtotal);
 
     return {
       valid: true,
       code: promo.code,
-      description: promo.description,
+      description: promo.type === 'percent' ? `${value}% de réduction` : `${value.toFixed(2)}€ de réduction`,
       discountType: promo.type,
-      discountValue: promo.value,
+      discountValue: value,
       discountAmount,
     };
   }

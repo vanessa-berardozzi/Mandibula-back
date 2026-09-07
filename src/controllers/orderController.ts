@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
+import { CartService } from '../services/cartService';
 import { calculateVat } from '../services/vat/vatCalculationService';
 import { calculateDiscountedPrice } from '../utils/pricing';
 
@@ -19,7 +20,6 @@ const createOrderSchema = z.object({
   shippingCountryCode: z.string().length(2), // ← NOUVEAU, obligatoire
   billingAddress: z.string().optional(),
   notes: z.string().optional(),
-  discount: z.number().min(0).optional(),
   promoCode: z.string().optional(),
   customerEmail: z.string().email().optional(),
   customerPhone: z.string().optional(),
@@ -55,7 +55,6 @@ export class OrderController {
         shippingCountryCode,
         billingAddress,
         notes,
-        discount: discountFromBody,
         promoCode,
       } = validation.data;
 
@@ -139,7 +138,16 @@ export class OrderController {
       });
 
       const SHIPPING_COST = 5.99;
-      const discount = discountFromBody ?? 0;
+      let discount = 0;
+      let appliedPromoCode: string | undefined;
+      if (promoCode) {
+        const promotion = await CartService.validatePromoCode(promoCode, subtotal);
+        if (!promotion.valid || promotion.discountAmount === undefined) {
+          return res.status(400).json({ error: promotion.error ?? 'Code promo invalide' });
+        }
+        discount = promotion.discountAmount;
+        appliedPromoCode = promotion.code;
+      }
 
       // --- Calcul TVA réel, côté serveur ----------------------------------
       const vatItems = items.map((item) => {
@@ -169,10 +177,20 @@ export class OrderController {
       });
 
       const vatAmount = vatResult.totals.totalVatCents / 100; // retour en euros pour rester cohérent avec le reste du schéma
-  const total = subtotal - discount + SHIPPING_COST;
+      const total = subtotal - discount + SHIPPING_COST;
 
       // Créer la commande (pas de réservation, juste crée la cmd en PENDING)
       const order = await prisma.$transaction(async (tx) => {
+        let promotionId: string | undefined;
+        if (appliedPromoCode) {
+          const promotion = await tx.promotion.update({
+            where: { code: appliedPromoCode },
+            data: { usageCount: { increment: 1 } },
+            select: { id: true },
+          });
+          promotionId = promotion.id;
+        }
+
         return tx.order.create({
           data: {
             userId,
@@ -187,8 +205,9 @@ export class OrderController {
             billingAddress,
             vatDetailsJson: vatResult as any,
             vatRegime: vatResult.regime,
+            promotionId,
 
-            notes: notes ?? (promoCode ? `Promo: ${promoCode}` : undefined),
+            notes: notes ?? (appliedPromoCode ? `Promo: ${appliedPromoCode}` : undefined),
             orderItems: { create: orderItems },
           },
         });

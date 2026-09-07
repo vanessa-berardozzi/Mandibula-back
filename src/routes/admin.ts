@@ -3,6 +3,7 @@ import { AdminCustomerController } from '../controllers/admin/adminCustomerContr
 import { AdminDashboardController } from '../controllers/admin/adminDashboardController';
 import { AdminOrderController } from '../controllers/admin/adminOrderController';
 import { AdminProductController } from '../controllers/admin/adminProductController';
+import { AdminPromotionController } from '../controllers/admin/adminPromotionController';
 import { AdminStockController } from '../controllers/admin/adminStockController';
 import { prisma } from '../lib/prisma';
 import { adminMiddleware, authMiddleware } from '../middleware/auth';
@@ -49,6 +50,12 @@ router.get('/products/:productId', AdminProductController.getOne);
 router.patch('/products/:productId', AdminProductController.update);
 
 router.get('/customers', AdminCustomerController.list);
+
+// Promotions endpoints
+router.get('/promotions', AdminPromotionController.list);
+router.post('/promotions', AdminPromotionController.create);
+router.patch('/promotions/:id', AdminPromotionController.update);
+router.delete('/promotions/:id', AdminPromotionController.delete);
 
 /**
  * GET /api/admin/categories

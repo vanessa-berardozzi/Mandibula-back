@@ -144,7 +144,7 @@ router.post('/promo', authMiddleware, async (req: Request, res: Response) => {
     }
 
     const parsedSubtotal = typeof subtotal === 'number' ? subtotal : 0;
-    const result = CartService.validatePromoCode(code, parsedSubtotal);
+    const result = await CartService.validatePromoCode(code, parsedSubtotal);
 
     res.status(200).json(result);
   } catch (error) {

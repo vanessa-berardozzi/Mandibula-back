@@ -496,3 +496,14 @@ model Promotion {
   @@index([isActive])
   @@map("promotions")
 }
+
+/// Bandeau d'information affiché en haut du site (configuration unique, id = "default")
+model SiteBanner {
+  id        String   @id @default("default")
+  message   String   @db.VarChar(300)
+  /// "ACTIVE" ou "PAUSED"
+  status    String   @default("ACTIVE")
+  updatedAt DateTime @updatedAt
+
+  @@map("site_banner")
+}

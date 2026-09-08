@@ -4,6 +4,7 @@ import createError, { HttpError } from 'http-errors';
 import addressesRouter from './routes/addresses';
 import adminRouter from './routes/admin';
 import authRouter from './routes/auth';
+import bannerRouter from './routes/banner';
 import cartRouter from './routes/cart';
 import checkoutRouter from './routes/checkout';
 import indexRouter from './routes/index';
@@ -79,6 +80,7 @@ app.use('/api/webhooks', webhooksRouter);   // Routes webhooks (publiques, appel
 app.use('/api/upload', uploadRouter);       // Upload fichiers vers Cloudinary (protégé par authMiddleware)
 app.use('/api/wishlist', wishlistRouter);   // Routes favoris (protégées par authMiddleware)
 app.use('/api/vat', vatRouter);             // Routes VAT (publiques)
+app.use('/api/banner', bannerRouter);       // Bandeau d'information du site (public)
 app.use(vatErrorHandler);
 
 

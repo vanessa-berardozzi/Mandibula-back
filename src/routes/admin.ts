@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response, Router } from 'express';
+import { AdminBannerController } from '../controllers/admin/adminBannerController';
 import { AdminCustomerController } from '../controllers/admin/adminCustomerController';
 import { AdminDashboardController } from '../controllers/admin/adminDashboardController';
 import { AdminOrderController } from '../controllers/admin/adminOrderController';
@@ -50,6 +51,10 @@ router.get('/products/:productId', AdminProductController.getOne);
 router.patch('/products/:productId', AdminProductController.update);
 
 router.get('/customers', AdminCustomerController.list);
+
+// Bandeau d'information du site (singleton)
+router.get('/banner', AdminBannerController.get);
+router.post('/banner', AdminBannerController.update);
 
 // Promotions endpoints
 router.get('/promotions', AdminPromotionController.list);

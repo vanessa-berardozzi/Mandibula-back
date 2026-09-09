@@ -7,7 +7,9 @@ import { z } from 'zod';
 export const ORDER_STATUSES = [
   'PENDING',
   'CONFIRMED',
+  'TO_PREPARE',
   'PREPARING',
+  'READY',
   'HELD_WEATHER',
   'SHIPPED',
   'DELIVERED',

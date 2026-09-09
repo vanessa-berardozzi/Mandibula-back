@@ -372,14 +372,30 @@ export class StockService {
           });
         }
 
-        // Marquer la commande comme confirmée
+        const banner = await tx.siteBanner.findUnique({
+          where: { id: 'default' },
+          select: { status: true },
+        });
+
+        // Une commande payée pendant une pause météo reste bloquée.
+        const nextStatus = banner?.status === 'PAUSED' ? 'HELD_WEATHER' : 'CONFIRMED';
+
+        // Marquer la commande comme confirmée ou bloquée par la météo
         await tx.order.update({
           where: { id: orderId },
           data: {
             paymentStatus: 'PAID',
-            status: 'CONFIRMED',
+            status: nextStatus,
           },
         });
+
+        if (nextStatus === 'HELD_WEATHER') {
+          await tx.orderWeatherHold.upsert({
+            where: { orderId: order.id },
+            create: { orderId: order.id, previousStatus: 'CONFIRMED' },
+            update: { previousStatus: 'CONFIRMED', releasedAt: null },
+          });
+        }
 
         confirmed = true;
       });

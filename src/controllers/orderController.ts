@@ -181,6 +181,11 @@ export class OrderController {
 
       // Créer la commande (pas de réservation, juste crée la cmd en PENDING)
       const order = await prisma.$transaction(async (tx) => {
+        const banner = await tx.siteBanner.findUnique({
+          where: { id: 'default' },
+          select: { status: true },
+        });
+        const weatherPaused = banner?.status === 'PAUSED';
         let promotionId: string | undefined;
         if (appliedPromoCode) {
           const promotion = await tx.promotion.update({
@@ -194,7 +199,7 @@ export class OrderController {
         return tx.order.create({
           data: {
             userId,
-            status: 'PENDING',
+            status: weatherPaused ? 'HELD_WEATHER' : 'PENDING',
             paymentStatus: 'PENDING',
             paymentMethod,
             subtotal,
@@ -206,6 +211,7 @@ export class OrderController {
             vatDetailsJson: vatResult as any,
             vatRegime: vatResult.regime,
             promotionId,
+            weatherHold: weatherPaused ? { create: { previousStatus: 'PENDING' } } : undefined,
 
             notes: notes ?? (appliedPromoCode ? `Promo: ${appliedPromoCode}` : undefined),
             orderItems: { create: orderItems },

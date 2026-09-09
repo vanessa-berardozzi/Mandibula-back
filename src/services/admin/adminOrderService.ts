@@ -9,7 +9,9 @@ const LIVE_ROOT_CATEGORY_SLUG = 'animaux-vivants';
 const OPEN_STATUSES: AdminOrderStatus[] = [
   'PENDING',
   'CONFIRMED',
+  'TO_PREPARE',
   'PREPARING',
+  'READY',
   'HELD_WEATHER',
   'SHIPPED',
 ];

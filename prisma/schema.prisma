@@ -23,11 +23,14 @@ enum Role {
 enum OrderStatus {
   PENDING       // Nouvelle, pas encore payée
   CONFIRMED     // Payée, à traiter
+  TO_PREPARE    // À préparer
   PREPARING     // En cours de préparation
   HELD_WEATHER  // Expédition du vivant suspendue pour raison météo
+  READY        // Prête à être expédiée
   SHIPPED
   DELIVERED
   CANCELLED
+ 
 }
 
 enum PaymentMethod {
@@ -329,6 +332,7 @@ model Order {
 
   orderItems     OrderItem[]
   stockMovements StockMovement[]
+  weatherHold    OrderWeatherHold?
   invoice        Invoice?
   promotionId    String?
   promotion      Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
@@ -336,6 +340,20 @@ model Order {
   @@index([userId, paymentStatus]) // ← Pour lister les commandes actives d'un user
   @@index([paymentStatus, createdAt]) // ← Pour dashboard/analytics
   @@index([promotionId])
+}
+
+/// Mémorise le statut d'une commande avant un blocage météo global.
+/// Permet de restaurer uniquement les commandes bloquées par le bandeau.
+model OrderWeatherHold {
+  id            String      @id @default(cuid())
+  orderId       String      @unique
+  order         Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  previousStatus OrderStatus
+  createdAt     DateTime    @default(now())
+  releasedAt    DateTime?
+
+  @@index([releasedAt])
+  @@map("order_weather_hold")
 }
 
 model OrderItem {

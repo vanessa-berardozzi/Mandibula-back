@@ -65,6 +65,8 @@ const CATEGORY_MAP: Record<string, CategoryMapping> = {
   'nourriture':      { rootName: 'Non-vivant',      rootSlug: 'non-vivant',      subName: 'Nourriture',      subSlug: 'nourriture',       isAnimal: false },
   'accessoires':     { rootName: 'Non-vivant',      rootSlug: 'non-vivant',      subName: 'Accessoires',     subSlug: 'accessoires',      isAnimal: false },
   'pack':            { rootName: 'Non-vivant',      rootSlug: 'non-vivant',      subName: 'Packs & Kits',    subSlug: 'packs-kits',       isAnimal: false },
+  'bijoux':          { rootName: 'Non-vivant',      rootSlug: 'non-vivant',      subName: 'Bijoux',           subSlug: 'bijoux',            isAnimal: false },
+  'substrats':       { rootName: 'Non-vivant',      rootSlug: 'non-vivant',      subName: 'Substrats',       subSlug: 'substrats',        isAnimal: false },
 };
 
 const DEFAULT_CATEGORY: CategoryMapping = {
@@ -210,18 +212,12 @@ function titleCaseWords(value: string): string {
     .join(' ');
 }
 
-function categoryLooksLikeAnimal(category: string, descriptionHtml: string, productName: string): boolean {
-  const normalizedCategory = normalizeKey(category);
-  if (ANIMAL_CATEGORY_HINTS.has(normalizedCategory)) return true;
-
-  const text = `${stripHtml(descriptionHtml)} ${productName}`.toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-  if (/temperature|humidite|elevage|espece|detritivore|substrat/.test(text)) {
-    return true;
-  }
-
-  return /isopod|araignee|myriapod|blatte|mante|coleoptere|invertebre/.test(text);
+// Seules les catégories SumUp explicitement listées comme vivantes rattachent au root "Animaux vivants" ;
+// toute catégorie inconnue est traitée comme Non-vivant (pas d'heuristique sur le texte de la description,
+// qui provoquait de faux positifs : ex. "Substrats"/"Bijoux" classés vivants car leur description mentionne
+// des mots comme "substrat" ou "isopode").
+function categoryLooksLikeAnimal(category: string): boolean {
+  return ANIMAL_CATEGORY_HINTS.has(normalizeKey(category));
 }
 
 function toDynamicCategoryMapping(ctx: CategoryResolutionContext): CategoryMapping {
@@ -231,7 +227,7 @@ function toDynamicCategoryMapping(ctx: CategoryResolutionContext): CategoryMappi
     return DEFAULT_CATEGORY;
   }
 
-  const isAnimal = categoryLooksLikeAnimal(ctx.rawCategory, ctx.descriptionHtml, ctx.productName);
+  const isAnimal = categoryLooksLikeAnimal(ctx.rawCategory);
   const subName = titleCaseWords(normalized);
 
   return {
@@ -423,7 +419,7 @@ async function main() {
     // Sous-catégorie
     const sub = await prisma.category.upsert({
       where:  { slug: mapping.subSlug },
-      update: { name: mapping.subName },
+      update: { name: mapping.subName, parentId: rootId },
       create: { name: mapping.subName, slug: mapping.subSlug, parentId: rootId, isActive: true },
     });
     catCache.set(mapping.subSlug, sub.id);
@@ -454,6 +450,13 @@ async function main() {
     const prices      = product.variants.map(v => v.price).filter(p => p > 0);
     const displayPrice = prices.length > 0 ? Math.min(...prices) : 0.01;
 
+    // Stock désormais porté par Product.totalStock (en individus), plus par variante.
+    // Chaque ligne CSV donne un nombre de lots dispo pour ce SKU -> on convertit en individus (stock * lotSize) et on cumule.
+    const totalStock = product.variants.reduce(
+      (sum, v) => sum + v.stock * inferLotSize(v.name),
+      0,
+    );
+
     // ID stable = SumUp Item ID (UUID), ou slugify du nom en fallback
     const productId = product.sumupId
       ? product.sumupId.toLowerCase()
@@ -469,6 +472,7 @@ async function main() {
           images: product.images,
           attributes: attributes as unknown as Prisma.InputJsonValue,
           categoryId,
+          totalStock,
         },
         create: {
           id: productId,
@@ -478,6 +482,7 @@ async function main() {
           images: product.images,
           attributes: attributes as unknown as Prisma.InputJsonValue,
           categoryId,
+          totalStock,
         },
       });
 
@@ -490,7 +495,6 @@ async function main() {
           },
           update: {
             price:    varPrice,
-            stock:    variant.stock,
             lotSize:  inferLotSize(variant.name),
             isActive: variantIsActive,
           },
@@ -499,14 +503,12 @@ async function main() {
             name:      variant.name,
             lotSize:   inferLotSize(variant.name),
             price:     varPrice,
-            stock:     variant.stock,
             isActive:  variantIsActive,
           },
         });
       }
 
-      // Synchroniser StockInfo : seuil d'alerte + statut calculé depuis les variantes
-      const totalStock = product.variants.reduce((sum, v) => sum + v.stock, 0);
+      // Synchroniser StockInfo : seuil d'alerte + statut calculé depuis totalStock du produit
       const minThreshold = 5;
       const stockStatus =
         totalStock === 0                 ? 'OUT_OF_STOCK' :

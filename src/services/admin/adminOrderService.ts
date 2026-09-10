@@ -4,6 +4,7 @@ import type { AdminOrderStatus, AdminOrdersQuery } from '../../validations/admin
 
 /** Slug de la catégorie racine regroupant tout le vivant (cf. prisma/seed/seed.ts) */
 const LIVE_ROOT_CATEGORY_SLUG = 'animaux-vivants';
+const NON_LIVE_CATEGORY_SLUGS = new Set(['bijoux']);
 
 /** Statuts d'une commande encore en cours de traitement */
 const OPEN_STATUSES: AdminOrderStatus[] = [
@@ -92,6 +93,8 @@ export function toListItem(order: OrderWithRelations): AdminOrderListItem {
 
   const containsLive = order.orderItems.some((item) => {
     const category = item.variant.product.category;
+    if (NON_LIVE_CATEGORY_SLUGS.has(category.slug)) return false;
+
     return (
       category.parent?.slug === LIVE_ROOT_CATEGORY_SLUG || category.slug === LIVE_ROOT_CATEGORY_SLUG
     );

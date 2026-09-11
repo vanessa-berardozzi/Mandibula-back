@@ -47,6 +47,7 @@ enum PaymentStatus {
   REFUNDED  // Remboursé
 }
 
+
 enum StockStatus {
   IN_STOCK
   LOW_STOCK
@@ -61,6 +62,11 @@ enum StockMovementType {
   LOSS                // mortalité, casse
   ADJUSTMENT          // correction manuelle après inventaire physique
   RETURN              // retour client (SAV)
+}
+
+enum StockMode {
+   SHARED_POOL   // stock au niveau Product, variantes = lots (invertébrés)
+  PER_VARIANT   // stock indépendant par variante (accessoires)
 }
 
 enum PromotionType {
@@ -213,10 +219,11 @@ model Product {
 
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id])
+  stockMode   StockMode @default(SHARED_POOL)
 
   totalStock    Int @default(0) // Stock total de l'espèce (individus physiquement présents)
   reservedStock Int @default(0) // Bloqué par des commandes PENDING non encore payées
-  // Stock vendable = totalStock - reservedStock (calculé côté service, jamais stocké)
+ 
 
   shippingWeight Decimal? @db.Decimal(10, 2) // En grammes, sert au calcul des frais de port
   isPublished    Boolean  @default(true) // Visible dans le catalogue public
@@ -237,14 +244,18 @@ model Product {
 }
 
 model ProductVariant {
-  id        String  @id @default(uuid())
+    id        String  @id @default(uuid())
   productId String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  name    String  // "Lot de 5"
-  lotSize Int     @default(1) // Combien d'unités dans le lot
-  price   Decimal @db.Decimal(10, 2)
+  name     String
+  lotSize  Int     @default(1) // n'a de sens qu'en SHARED_POOL
+  price    Decimal @db.Decimal(10, 2)
   isActive Boolean @default(true)
+
+  // Utilisés uniquement si product.stockMode = PER_VARIANT
+  totalStock    Int? 
+  reservedStock Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -255,12 +266,15 @@ model ProductVariant {
 
   @@unique([productId, name])
   @@map("product_variant")
+  stockInfos StockInfo?
 }
 
 model StockInfo {
   id        String  @id @default(uuid())
-  productId String  @unique
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String?  @unique
+  product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String? @unique
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
   // quantity est calculé à la volée : SUM(productVariant.stock) WHERE productId
   minThreshold Int         @default(5) // Seuil pour LOW_STOCK
@@ -275,10 +289,13 @@ model StockMovement {
   variantId String
   variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
   productId String         // Dénormalisé pour requêtes dashboard sans jointure
+  cartId String?
+
+  @@index([cartId])
 
   type     StockMovementType
-  quantity Int     // TOUJOURS en individus (déjà résolu : lotSize * nb de lots), jamais en nombre de lots
-  reason   String? // libre, pour ADJUSTMENT/LOSS uniquement (contexte humain)
+  quantity Int
+  reason   String? 
 
   // Traçabilité fiable : FK plutôt que texte libre dans `reason`
   orderId String?

@@ -96,15 +96,14 @@ export class CartService {
     const variantMap = new Map(variants.map((v) => [v.id, v]));
 
     // ✅ OPTIMISATION: Récupérer les stocks DISPO en UNE requête
-    const productIds = variants.map((v) => v.productId);
-    const availableStocks = await StockService.getAvailableStocks(productIds);
+    const availableStocks = await StockService.getAvailableStocks(guestVariantIds);
 
     // Fusionner les articles guest dans le panier user
     for (const guestItem of guestCart.items) {
       const variant = variantMap.get(guestItem.variantId);
       if (!variant || !variant.isActive) continue;
 
-      const availableStock = availableStocks.get(variant.productId) ?? 0;
+      const availableStock = availableStocks.get(variant.id) ?? 0;
       const existing = userCart.items.find((i) => i.variantId === guestItem.variantId);
 
       if (existing) {
@@ -171,11 +170,10 @@ export class CartService {
       promotionValue
     );
 
-    // Vérifier la disponibilité RÉELLE (avec StockService) - stock exprimé en individus
-    const availableStock = await StockService.getAvailableStock(variant.productId);
-    const availableLots = Math.floor(availableStock / variant.lotSize);
-    if (availableLots < quantity) {
-      throw new Error(`Stock insuffisant : seulement ${availableLots} lot(s) disponible(s)`);
+    // Vérifier la disponibilité RÉELLE (avec StockService) - stock disponible en lots ou unités de variante
+    const availableStock = await StockService.getAvailableStock(variantId);
+    if (availableStock < quantity) {
+      throw new Error(`Stock insuffisant : seulement ${availableStock} disponible(s)`);
     }
 
     const cart = await this.getOrCreateCart(userId, guestToken);
@@ -189,8 +187,8 @@ export class CartService {
     if (existing) {
       const newQty = existing.quantity + quantity;
       if (newQty > 100) throw new Error('Quantité maximum: 100');
-      if (newQty > availableLots) {
-        throw new Error(`Stock insuffisant : seulement ${availableLots} lot(s) disponible(s)`);
+      if (newQty > availableStock) {
+        throw new Error(`Stock insuffisant : seulement ${availableStock} disponible(s)`);
       }
 
       // Mettre à jour la réservation
@@ -260,10 +258,9 @@ export class CartService {
 
     if (!variant) throw new Error('Variante non trouvée');
 
-    const availableStock = await StockService.getAvailableStock(variant.productId);
-    const availableLots = Math.floor(availableStock / variant.lotSize);
-    if (availableLots < quantity) {
-      throw new Error(`Stock insuffisant : seulement ${availableLots} lot(s) disponible(s)`);
+    const availableStock = await StockService.getAvailableStock(variantId);
+    if (availableStock < quantity) {
+      throw new Error(`Stock insuffisant : seulement ${availableStock} disponible(s)`);
     }
 
     // Mettre à jour la réservation
@@ -338,8 +335,8 @@ export class CartService {
     }
 
     // ✅ OPTIMISATION: Récupérer tous les stocks DISPO en UNE requête
-    const productIds = cart.items.map((item) => item.variant.product.id);
-    const availableStocks = await StockService.getAvailableStocks(productIds);
+    const variantIds = cart.items.map((item) => item.variantId);
+    const availableStocks = await StockService.getAvailableStocks(variantIds);
 
     const items = cart.items.map((item) => ({
       id: item.id,
@@ -350,7 +347,7 @@ export class CartService {
         price: Number(item.variant.price),
         lotSize: item.variant.lotSize,
         // ✅ STOCK RÉEL avec réservations
-        availableStock: availableStocks.get(item.variant.product.id) ?? 0,
+        availableStock: availableStocks.get(item.variantId) ?? 0,
         product: {
           id: item.variant.product.id,
           name: item.variant.product.name,
@@ -414,8 +411,7 @@ export class CartService {
     const variantMap = new Map(variants.map((v) => [v.id, v]));
 
     // ✅ OPTIMISATION: Récupérer les stocks DISPO en UNE requête
-    const productIds = variants.map((v) => v.productId);
-    const availableStocks = await StockService.getAvailableStocks(productIds);
+    const availableStocks = await StockService.getAvailableStocks(variantIds);
 
     // Valider chaque article
     for (const item of cart.items) {
@@ -426,12 +422,11 @@ export class CartService {
         continue;
       }
 
-      // ✅ STOCK RÉEL (avec réservations), converti en lots achetables
-      const available = availableStocks.get(variant.productId) ?? 0;
-      const availableLots = Math.floor(available / variant.lotSize);
-      if (availableLots < item.quantity) {
+      // ✅ STOCK RÉEL (avec réservations), déjà exprimé en lots commandables ou unités de variante
+      const available = availableStocks.get(item.variantId) ?? 0;
+      if (available < item.quantity) {
         errors.push(
-          `Stock insuffisant pour "${variant.product.name} - ${variant.name}": ${availableLots} lot(s) disponible(s)`
+          `Stock insuffisant pour "${variant.product.name} - ${variant.name}": ${available} disponible(s)`
         );
         validatedItems.push({
           variantId: item.variantId,

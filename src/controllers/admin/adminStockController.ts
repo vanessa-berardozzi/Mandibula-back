@@ -6,16 +6,20 @@ const adjustStockSchema = z.object({
   quantity: z.number().int('La quantité doit être un entier').min(-10000).max(10000),
   reason: z.string().min(3).max(500).optional(),
   type: z.enum(['ENTRY', 'LOSS', 'ADJUSTMENT']).optional(),
+  variantId: z.string().optional(),
 });
+
+import { StockMode } from '@prisma/client';
+import { AdminProductService } from '../../services/admin/adminProductService';
 
 export class AdminStockController {
   /**
    * PATCH /api/admin/stock/product/:productId
-   * Ajuste le stock total d'un produit (ajoute ou enlève des unités)
+   * Ajuste le stock d'un produit (global si SHARED_POOL, ou par variante si PER_VARIANT)
    */
   static async adjustProductStock(req: Request, res: Response): Promise<void> {
     const { productId } = req.params;
-    
+
     const validation = adjustStockSchema.safeParse(req.body);
     if (!validation.success) {
       res.status(400).json({
@@ -28,7 +32,7 @@ export class AdminStockController {
       return;
     }
 
-    const { quantity, reason, type } = validation.data;
+    const { quantity, reason, type, variantId } = validation.data;
 
     if (quantity === 0) {
       res.status(400).json({ error: 'La quantité ne peut pas être nulle' });
@@ -38,7 +42,10 @@ export class AdminStockController {
     try {
       const product = await prisma.product.findUnique({
         where: { id: productId },
-        select: { id: true, name: true, totalStock: true },
+        include: {
+          variants: true,
+          stockInfo: true,
+        },
       });
 
       if (!product) {
@@ -46,6 +53,76 @@ export class AdminStockController {
         return;
       }
 
+      if (product.stockMode === StockMode.PER_VARIANT) {
+        // En mode PER_VARIANT, on doit cibler une variante
+        const targetVariant = variantId
+          ? product.variants.find((v) => v.id === variantId)
+          : product.variants.length === 1
+            ? product.variants[0]
+            : null;
+
+        if (!targetVariant) {
+          res.status(400).json({
+            error: 'Variante requise',
+            message: 'Veuillez spécifier la variante dont vous souhaitez ajuster le stock',
+          });
+          return;
+        }
+
+        const currentVariantStock = targetVariant.totalStock ?? 0;
+        const newVariantStock = currentVariantStock + quantity;
+        if (newVariantStock < 0) {
+          res.status(400).json({
+            error: 'Stock insuffisant',
+            message: `Stock actuel de la variante "${targetVariant.name}": ${currentVariantStock}, impossible de retirer ${Math.abs(quantity)}`,
+          });
+          return;
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+          await tx.productVariant.update({
+            where: { id: targetVariant.id },
+            data: { totalStock: newVariantStock },
+          });
+
+          await tx.stockMovement.create({
+            data: {
+              productId: productId,
+              variantId: targetVariant.id,
+              type: type ?? (quantity > 0 ? 'ENTRY' : 'ADJUSTMENT'),
+              quantity: Math.abs(quantity),
+              reason:
+                reason ||
+                `Ajustement manuel (${targetVariant.name}) par ${req.user?.name || 'Admin'}`,
+            },
+          });
+
+          // Recalculer le totalStock du produit
+          const allVariants = await tx.productVariant.findMany({
+            where: { productId },
+            select: { totalStock: true, reservedStock: true },
+          });
+          const sumTotal = allVariants.reduce((acc, v) => acc + (v.totalStock ?? 0), 0);
+
+          const updatedProduct = await tx.product.update({
+            where: { id: productId },
+            data: { totalStock: sumTotal },
+            select: { id: true, name: true, totalStock: true },
+          });
+
+          return updatedProduct;
+        });
+
+        await AdminProductService.recalculateStockStatus(productId);
+
+        res.json({
+          message: 'Stock de la variante ajusté avec succès',
+          product: result,
+        });
+        return;
+      }
+
+      // Mode SHARED_POOL (Animaux vivants)
       const newStock = product.totalStock + quantity;
       if (newStock < 0) {
         res.status(400).json({
@@ -62,18 +139,15 @@ export class AdminStockController {
           select: { id: true, name: true, totalStock: true },
         });
 
-        // Le mouvement est rattaché à une variante : on prend la première disponible.
-        const firstVariant = await tx.productVariant.findFirst({
-          where: { productId },
-          orderBy: [{ isActive: 'desc' }, { createdAt: 'asc' }],
-          select: { id: true },
-        });
+        const targetVariant = variantId
+          ? product.variants.find((v) => v.id === variantId)
+          : product.variants[0];
 
-        if (firstVariant) {
+        if (targetVariant) {
           await tx.stockMovement.create({
             data: {
               productId: productId,
-              variantId: firstVariant.id,
+              variantId: targetVariant.id,
               type: type ?? (quantity > 0 ? 'ENTRY' : 'ADJUSTMENT'),
               quantity: Math.abs(quantity),
               reason: reason || `Ajustement manuel par ${req.user?.name || 'Admin'}`,
@@ -81,23 +155,10 @@ export class AdminStockController {
           });
         }
 
-        const stockInfo = await tx.stockInfo.findUnique({
-          where: { productId },
-        });
-        const minThreshold = stockInfo?.minThreshold ?? 5;
-        const newStatus =
-          newStock === 0 ? 'OUT_OF_STOCK' :
-          newStock <= minThreshold ? 'LOW_STOCK' :
-          'IN_STOCK';
-
-        await tx.stockInfo.upsert({
-          where: { productId },
-          create: { productId, minThreshold, status: newStatus },
-          update: { status: newStatus },
-        });
-
         return updated;
       });
+
+      await AdminProductService.recalculateStockStatus(productId);
 
       res.json({
         message: 'Stock ajusté avec succès',
@@ -105,13 +166,13 @@ export class AdminStockController {
       });
     } catch (error) {
       console.error('[Admin stock] Erreur ajustement stock:', error);
-      res.status(500).json({ error: 'Erreur lors de l\'ajustement du stock' });
+      res.status(500).json({ error: "Erreur lors de l'ajustement du stock" });
     }
   }
 
   /**
    * GET /api/admin/stock/product/:productId
-   * Récupère les détails de stock d'un produit
+   * Récupère les détails de stock d'un produit et de ses variantes
    */
   static async getProductStock(req: Request, res: Response): Promise<void> {
     const { productId } = req.params;
@@ -122,7 +183,9 @@ export class AdminStockController {
         select: {
           id: true,
           name: true,
+          stockMode: true,
           totalStock: true,
+          reservedStock: true,
           variants: {
             select: {
               id: true,
@@ -130,6 +193,14 @@ export class AdminStockController {
               lotSize: true,
               isActive: true,
               price: true,
+              totalStock: true,
+              reservedStock: true,
+              stockInfos: {
+                select: {
+                  minThreshold: true,
+                  status: true,
+                },
+              },
             },
           },
           stockInfo: {
@@ -147,10 +218,17 @@ export class AdminStockController {
         return;
       }
 
+      const isPerVariant = product.stockMode === StockMode.PER_VARIANT;
+
       res.json({
         product: {
           ...product,
-          totalStock: product.totalStock,
+          variants: product.variants.map((v) => ({
+            ...v,
+            availableStock: isPerVariant
+              ? Math.max(0, (v.totalStock ?? 0) - (v.reservedStock ?? 0))
+              : Math.max(0, Math.floor((product.totalStock - product.reservedStock) / (v.lotSize || 1))),
+          })),
         },
       });
     } catch (error) {

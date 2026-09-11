@@ -20,7 +20,11 @@ export { cloudinary };
  */
 export function uploadToCloudinary(
   buffer: Buffer,
-  options: { folder?: string; public_id?: string } = {}
+  options: {
+    folder?: string;
+    public_id?: string;
+    transformation?: Record<string, unknown>[];
+  } = {}
 ): Promise<{ secure_url: string; public_id: string }> {
   // Initialisation lazy : garantit que process.env est peuplé par dotenv
   cloudinary.config({
@@ -38,7 +42,7 @@ export function uploadToCloudinary(
         overwrite: true,
         invalidate: true,
         resource_type: 'image',
-        transformation: [
+        transformation: options.transformation ?? [
           { width: 400, height: 400, crop: 'fill', gravity: 'face' },
           { quality: 'auto', fetch_format: 'auto' },
         ],

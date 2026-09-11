@@ -1,4 +1,4 @@
-import { Prisma, PromotionType } from '@prisma/client';
+import { Prisma, PromotionType, StockMode } from '@prisma/client';
 import { Request, Response, Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { calculateDiscountedPrice } from '../utils/pricing';
@@ -15,6 +15,8 @@ const variantInclude = {
       lotSize: true,
       price: true,
       isActive: true,
+      totalStock: true,
+      reservedStock: true,
     },
   },
   category: {
@@ -23,34 +25,57 @@ const variantInclude = {
 } as const;
 
 /**
- * Le stock est porté par le produit : chaque variante hérite du stock vendable.
- * La promotion (si active) est portée par le produit et s'applique à toutes ses variantes.
+ * Calcule les prix après promotions et la disponibilité selon le stockMode :
+ * - SHARED_POOL (animaux) : stock global partagé sur le produit, variantes = lots
+ * - PER_VARIANT (accessoires) : stock distinct par variante
  */
 function withAvailableStock<
   T extends {
     totalStock: number;
     reservedStock: number;
+    stockMode?: StockMode;
     promotionType: PromotionType;
     promotionValue: Prisma.Decimal | null;
-    variants: { price: Prisma.Decimal | number }[];
+    variants: {
+      id?: string;
+      price: Prisma.Decimal | number;
+      lotSize?: number;
+      totalStock?: number | null;
+      reservedStock?: number | null;
+    }[];
   },
 >(product: T) {
-  const availableStock = Math.max(0, product.totalStock - product.reservedStock);
+  const isPerVariant = product.stockMode === StockMode.PER_VARIANT;
   const promotionValue = product.promotionValue ? Number(product.promotionValue) : null;
+
+  const variantsWithStock = product.variants.map((variant) => {
+    const originalPrice = Number(variant.price);
+    const price = calculateDiscountedPrice(originalPrice, product.promotionType, promotionValue);
+
+    let variantAvailableStock = 0;
+    if (isPerVariant) {
+      variantAvailableStock = Math.max(0, (variant.totalStock ?? 0) - (variant.reservedStock ?? 0));
+    } else {
+      const globalAvailable = Math.max(0, product.totalStock - product.reservedStock);
+      variantAvailableStock = Math.max(0, Math.floor(globalAvailable / (variant.lotSize || 1)));
+    }
+
+    return {
+      ...(variant as Record<string, unknown>),
+      availableStock: variantAvailableStock,
+      price,
+      originalPrice: price < originalPrice ? originalPrice : undefined,
+    };
+  });
+
+  const productAvailableStock = isPerVariant
+    ? variantsWithStock.reduce((acc, v) => acc + (v.availableStock || 0), 0)
+    : Math.max(0, product.totalStock - product.reservedStock);
 
   return {
     ...product,
-    availableStock,
-    variants: product.variants.map((variant) => {
-      const originalPrice = Number(variant.price);
-      const price = calculateDiscountedPrice(originalPrice, product.promotionType, promotionValue);
-      return {
-        ...(variant as Record<string, unknown>),
-        availableStock,
-        price,
-        originalPrice: price < originalPrice ? originalPrice : undefined,
-      };
-    }),
+    availableStock: productAvailableStock,
+    variants: variantsWithStock,
   };
 }
 
@@ -125,12 +150,16 @@ router.get('/variants/batch', async (req: Request, res: Response) => {
         id: true,
         name: true,
         price: true,
+        lotSize: true,
+        totalStock: true,
+        reservedStock: true,
         product: {
           select: {
             id: true,
             name: true,
             images: true,
             vatCategory: true,
+            stockMode: true,
             totalStock: true,
             reservedStock: true,
             promotionType: true,
@@ -144,11 +173,16 @@ router.get('/variants/batch', async (req: Request, res: Response) => {
         const originalPrice = Number(variant.price);
         const promotionValue = variant.product.promotionValue ? Number(variant.product.promotionValue) : null;
         const price = calculateDiscountedPrice(originalPrice, variant.product.promotionType, promotionValue);
+        const isPerVariant = variant.product.stockMode === StockMode.PER_VARIANT;
+        const availableStock = isPerVariant
+          ? Math.max(0, (variant.totalStock ?? 0) - (variant.reservedStock ?? 0))
+          : Math.max(0, Math.floor((variant.product.totalStock - variant.product.reservedStock) / (variant.lotSize || 1)));
+
         return {
           ...variant,
           price,
           originalPrice: price < originalPrice ? originalPrice : undefined,
-          availableStock: Math.max(0, variant.product.totalStock - variant.product.reservedStock),
+          availableStock,
         };
       }),
     );

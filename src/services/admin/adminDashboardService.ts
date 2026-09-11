@@ -54,12 +54,20 @@ export interface AdminStockAlert {
 
 export class AdminDashboardService {
   /**
-   * Récupère les alertes de stock (produits avec stock bas ou épuisé)
-   * Basé sur Product.totalStock vs StockInfo.minThreshold
+   * Récupère les alertes de stock (produits ou variantes avec stock bas ou épuisé)
+   * Supporte les deux modes de stock : SHARED_POOL (produit) et PER_VARIANT (variante).
    */
   static async getStockAlerts(): Promise<AdminStockAlert[]> {
     const alerts = await prisma.stockInfo.findMany({
-      include: { product: true },
+      where: {
+        status: { in: ['LOW_STOCK', 'OUT_OF_STOCK'] },
+      },
+      include: {
+        product: true,
+        variant: {
+          include: { product: true },
+        },
+      },
       orderBy: { updatedAt: 'desc' },
       take: 100,
     });
@@ -67,16 +75,26 @@ export class AdminDashboardService {
     const result: AdminStockAlert[] = [];
 
     for (const alert of alerts) {
-      const isAlert = alert.product.totalStock === 0 || alert.product.totalStock <= alert.minThreshold;
-
-      if (isAlert) {
-        const status = alert.product.totalStock === 0 ? 'OUT_OF_STOCK' : 'LOW_STOCK';
+      if (alert.product) {
+        const available = Math.max(0, alert.product.totalStock - alert.product.reservedStock);
         result.push({
           productId: alert.product.id,
           name: alert.product.name,
-          currentStock: alert.product.totalStock,
+          currentStock: available,
           minThreshold: alert.minThreshold,
-          status,
+          status: alert.status === 'OUT_OF_STOCK' ? 'OUT_OF_STOCK' : 'LOW_STOCK',
+        });
+      } else if (alert.variant && alert.variant.product) {
+        const available = Math.max(
+          0,
+          (alert.variant.totalStock ?? 0) - (alert.variant.reservedStock ?? 0)
+        );
+        result.push({
+          productId: alert.variant.productId,
+          name: `${alert.variant.product.name} (${alert.variant.name})`,
+          currentStock: available,
+          minThreshold: alert.minThreshold,
+          status: alert.status === 'OUT_OF_STOCK' ? 'OUT_OF_STOCK' : 'LOW_STOCK',
         });
       }
     }

@@ -1,3 +1,4 @@
+import { AdminProductService } from '../services/admin/adminProductService';
 import { prisma } from './prisma';
 
 export interface RecalculationResult {
@@ -20,31 +21,18 @@ export async function recalculateAllStockStatuses(): Promise<RecalculationResult
   };
 
   try {
-    const allStockInfo = await prisma.stockInfo.findMany({
-      include: { product: true },
+    const products = await prisma.product.findMany({
+      select: { id: true },
     });
 
-    for (const stockInfo of allStockInfo) {
+    for (const product of products) {
       try {
-        const newStatus =
-          stockInfo.product.totalStock === 0
-            ? 'OUT_OF_STOCK'
-            : stockInfo.product.totalStock <= stockInfo.minThreshold
-              ? 'LOW_STOCK'
-              : 'IN_STOCK';
-
-        if (newStatus !== stockInfo.status) {
-          await prisma.stockInfo.update({
-            where: { id: stockInfo.id },
-            data: { status: newStatus },
-          });
-          result.updated++;
-        }
-
+        await AdminProductService.recalculateStockStatus(product.id);
         result.processed++;
+        result.updated++;
       } catch (err) {
         result.errors.push({
-          productId: stockInfo.productId,
+          productId: product.id,
           error: err instanceof Error ? err.message : 'Unknown error',
         });
       }
@@ -67,26 +55,13 @@ export async function recalculateStockStatusForProduct(
   productId: string
 ): Promise<'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK' | null> {
   try {
+    await AdminProductService.recalculateStockStatus(productId);
     const stockInfo = await prisma.stockInfo.findUnique({
       where: { productId },
-      include: { product: true },
+      select: { status: true },
     });
 
-    if (!stockInfo) return null;
-
-    const newStatus =
-      stockInfo.product.totalStock === 0
-        ? 'OUT_OF_STOCK'
-        : stockInfo.product.totalStock <= stockInfo.minThreshold
-          ? 'LOW_STOCK'
-          : 'IN_STOCK';
-
-    await prisma.stockInfo.update({
-      where: { id: stockInfo.id },
-      data: { status: newStatus },
-    });
-
-    return newStatus;
+    return (stockInfo?.status as 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK') ?? null;
   } catch (err) {
     console.error(
       `[Stock Status] Erreur recalcul produit ${productId}:`,

@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
 import { prisma } from '../../lib/prisma';
 import { AdminProductService } from '../../services/admin/adminProductService';
-import { adminEditProductSchema } from '../../validations/admin/adminProductSchemas';
+import { adminCreateProductSchema, adminEditProductSchema } from '../../validations/admin/adminProductSchemas';
 
 export class AdminProductController {
   /**
@@ -36,6 +36,8 @@ export class AdminProductController {
             images: true,
             totalStock: true,
             isPublished: true,
+            stockMode: true,
+            vatCategory: true,
             category: {
               select: { id: true, name: true },
             },
@@ -62,6 +64,8 @@ export class AdminProductController {
           image: product.images[0] || '',
           price: Number(product.price),
           totalStock: product.totalStock,
+          stockMode: product.stockMode,
+          vatCategory: product.vatCategory,
           variantCount: product.variants.length,
           stockStatus: product.stockInfo?.status || 'UNKNOWN',
           minThreshold: product.stockInfo?.minThreshold || 5,
@@ -97,6 +101,35 @@ export class AdminProductController {
     } catch (error) {
       console.error('[Admin products] Erreur récupération détails:', error);
       res.status(500).json({ error: 'Erreur lors du chargement du produit' });
+    }
+  }
+
+  /**
+   * POST /api/admin/products
+   * Crée un produit avec ses variantes et son suivi de stock
+   */
+  static async create(req: Request, res: Response): Promise<void> {
+    try {
+      const validation = adminCreateProductSchema.safeParse(req.body);
+      if (!validation.success) {
+        res.status(400).json({
+          error: 'Validation échouée',
+          details: validation.error.flatten(),
+        });
+        return;
+      }
+
+      const product = await AdminProductService.createProduct(validation.data);
+
+      if (!product) {
+        res.status(400).json({ error: 'Catégorie introuvable' });
+        return;
+      }
+
+      res.status(201).json(product);
+    } catch (error) {
+      console.error('[Admin products] Erreur création:', error);
+      res.status(500).json({ error: 'Erreur lors de la création du produit' });
     }
   }
 

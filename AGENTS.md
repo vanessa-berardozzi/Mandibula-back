@@ -51,9 +51,12 @@ Repository: Mandibula-back (Express, TypeScript, Prisma, PostgreSQL, Vitest).
 
 ## CI Note
 - Existing CI workflow: [.github/workflows/ci.yml](.github/workflows/ci.yml)
-- CI currently targets `main` and `Auth` branches; if you adjust branch strategy, update workflow filters.
+- CI currently targets `main` and `dev` branches; if you adjust branch strategy, update workflow filters.
 
 ## Change Hygiene
 - Make targeted edits and avoid broad refactors unless requested.
-- Run lint/tests for the touched area before finalizing.
 - Prefer additive, low-risk changes in API-critical paths.
+- No documentation, lint or build changes without necessity.
+- Try to save time by reusing existing patterns and utilities instead of reinventing them.
+-Save Copilot tokens and any relevant session information to avoid repeated authentication prompts.
+

@@ -33,22 +33,14 @@ export async function renderEmailLayout(params: EmailLayoutParams): Promise<stri
         <mj-raw>
           <meta name="color-scheme" content="light only">
           <meta name="supported-color-schemes" content="light only">
-          <style>
-            body, table, td, div, p { background-color: #071109 !important; }
-            [data-ogsc] body,
-            [data-ogsc] table,
-            [data-ogsc] td,
-            [data-ogsc] div,
-            [data-ogsc] p,
-            [data-ogsb] body,
-            [data-ogsb] table,
-            [data-ogsb] td,
-            [data-ogsb] div,
-            [data-ogsb] p {
+          <!--[if mso]>
+          <style type="text/css">
+            body, table, td, div, p {
               background-color: #071109 !important;
               color: #ebf1ec !important;
             }
           </style>
+          <![endif]-->
         </mj-raw>
         <mj-attributes>
           <mj-all font-family="Arial, Helvetica, sans-serif" />
@@ -61,13 +53,22 @@ export async function renderEmailLayout(params: EmailLayoutParams): Promise<stri
           .mandibula-kicker div { color: #70f18b; font-family: Courier New, monospace; font-size: 11px; font-weight: 900; letter-spacing: 0.24em; text-transform: uppercase; }
           .mandibula-body p { margin: 0; }
           .mandibula-body p + p { margin-top: 12px; }
-          [data-ogsc] .mandibula-title div,
-          [data-ogsc] .mandibula-kicker div,
-          [data-ogsc] .mandibula-body p,
-          [data-ogsb] .mandibula-title div,
-          [data-ogsb] .mandibula-kicker div,
-          [data-ogsb] .mandibula-body p {
+          [data-ogsc] body,
+          [data-ogsc] table,
+          [data-ogsc] td,
+          [data-ogsc] div,
+          [data-ogsc] p,
+          [data-ogsb] body,
+          [data-ogsb] table,
+          [data-ogsb] td,
+          [data-ogsb] div,
+          [data-ogsb] p {
+            background-color: #071109 !important;
             color: #ebf1ec !important;
+          }
+          [data-ogsc] a,
+          [data-ogsb] a {
+            color: #70f18b !important;
           }
         </mj-style>
       </mj-head>

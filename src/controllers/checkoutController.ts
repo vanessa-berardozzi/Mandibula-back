@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { buildOrderConfirmationEmail, sendEmail } from '../lib/email';
 import { prisma } from '../lib/prisma';
 import { CartService } from '../services/cartService';
 import { paymentService } from '../services/payment/payment.service';
@@ -25,7 +26,46 @@ type OrderWithItems = {
  * Idempotent: ne fait rien si déjà PAID
  */
 async function confirmPayment(orderId: string, context: string): Promise<boolean> {
-  return await StockService.confirmOrder(orderId);
+  const confirmed = await StockService.confirmOrder(orderId);
+  if (confirmed) {
+    sendOrderConfirmationEmail(orderId).catch((err) =>
+      console.error('[Email] Erreur envoi récapitulatif de commande:', err)
+    );
+  }
+  return confirmed;
+}
+
+/**
+ * Envoie le récapitulatif de commande au client une fois le paiement confirmé
+ */
+async function sendOrderConfirmationEmail(orderId: string): Promise<void> {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      user: { select: { email: true } },
+      orderItems: {
+        include: { variant: { select: { product: { select: { name: true, images: true } } } } },
+      },
+    },
+  });
+
+  if (!order) return;
+
+  const { subject, text, html } = await buildOrderConfirmationEmail({
+    orderNumber: order.id.slice(0, 8).toUpperCase(),
+    createdAt: order.createdAt,
+    total: Number(order.total),
+    shippingAddress: order.shippingAddress,
+    items: order.orderItems.map((item) => ({
+      name: item.variant.product.name,
+      variantName: item.variantName,
+      quantity: item.quantity,
+      price: Number(item.price),
+      imageUrl: item.variant.product.images[0] ?? undefined,
+    })),
+  });
+
+  await sendEmail({ to: order.user.email, subject, text, html });
 }
 
 /**

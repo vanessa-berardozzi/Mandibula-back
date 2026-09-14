@@ -3,13 +3,17 @@ import { renderEmailLayout } from '../layout';
 
 export interface OrderItem {
   name: string;
+  variantName?: string;
   quantity: number;
-  price: number; // en euros
+  price: number; // en euros, prix unitaire
   imageUrl?: string;
 }
 
 export interface BuildOrderConfirmationParams {
   orderNumber: string;
+  createdAt: Date;
+  total: number;
+  shippingAddress?: string | null;
   items: OrderItem[];
 }
 
@@ -17,7 +21,11 @@ function formatPrice(value: number): string {
   return `${value.toFixed(2).replace('.', ',')} €`;
 }
 
-function buildItemsTable(items: OrderItem[]): string {
+function formatDate(date: Date): string {
+  return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+function buildItemsTable(items: OrderItem[], total: number): string {
   const rows = items
     .map(
       (item) => `
@@ -34,7 +42,7 @@ function buildItemsTable(items: OrderItem[]): string {
                 }
                 <td style="color:#f2f5f2;font-size:14px;font-weight:700;">
                   ${item.name}
-                  <div style="color:#6b756f;font-size:12px;font-weight:400;margin-top:2px;">Quantité : ${item.quantity}</div>
+                  <div style="color:#6b756f;font-size:12px;font-weight:400;margin-top:2px;">${item.variantName ? `${item.variantName} · ` : ''}Quantité : ${item.quantity}</div>
                 </td>
                 <td align="right" style="color:#70f18b;font-size:14px;font-weight:700;white-space:nowrap;">
                   ${formatPrice(item.price * item.quantity)}
@@ -45,8 +53,6 @@ function buildItemsTable(items: OrderItem[]): string {
         </tr>`
     )
     .join('');
-
-  const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
@@ -64,21 +70,51 @@ function buildItemsTable(items: OrderItem[]): string {
     </table>`;
 }
 
+function buildSummaryBlock(orderNumber: string, createdAt: Date, shippingAddress?: string | null): string {
+  const addressHtml = shippingAddress
+    ? `<tr>
+        <td style="padding-top:12px;color:#6b756f;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;">Adresse de livraison</td>
+      </tr>
+      <tr>
+        <td style="color:#f2f5f2;font-size:13px;line-height:1.5;">${shippingAddress.replace(/\r?\n/g, '<br/>')}</td>
+      </tr>`
+    : '';
+
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #1c2620;border-radius:10px;padding:16px;margin-bottom:20px;">
+      <tr>
+        <td>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="color:#6b756f;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;">Référence</td>
+              <td align="right" style="color:#6b756f;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;">Date</td>
+            </tr>
+            <tr>
+              <td style="color:#f2f5f2;font-size:14px;font-weight:700;">#${orderNumber}</td>
+              <td align="right" style="color:#f2f5f2;font-size:14px;font-weight:700;">${formatDate(createdAt)}</td>
+            </tr>
+            ${addressHtml}
+          </table>
+        </td>
+      </tr>
+    </table>`;
+}
+
 export async function buildOrderConfirmationEmail(
   params: BuildOrderConfirmationParams
 ): Promise<{ subject: string; text: string; html: string }> {
-  const { orderNumber, items } = params;
+  const { orderNumber, createdAt, total, shippingAddress, items } = params;
   const subject = `Confirmation de votre commande #${orderNumber}`;
 
-  const text = `Bonjour,\n\nVotre commande #${orderNumber} a été confirmée.\n\n${items
-    .map((i) => `- ${i.name} x${i.quantity} : ${formatPrice(i.price * i.quantity)}`)
-    .join('\n')}\n\nMerci pour votre confiance.`;
+  const text = `Bonjour,\n\nVotre commande #${orderNumber} du ${formatDate(createdAt)} a été confirmée.\n\n${items
+    .map((i) => `- ${i.name}${i.variantName ? ` (${i.variantName})` : ''} x${i.quantity} : ${formatPrice(i.price * i.quantity)}`)
+    .join('\n')}\n\nTotal : ${formatPrice(total)}${shippingAddress ? `\n\nAdresse de livraison :\n${shippingAddress}` : ''}\n\nMerci pour votre confiance.`;
 
   const html = await renderEmailLayout({
-    kicker: 'Commande confirmée',
+    kicker: 'Paiement confirmé',
     title: `Merci pour votre <span style="color:#70f18b;">commande</span>`,
-    bodyHtml: `<p style="margin:0;">Votre commande <strong style="color:#f2f5f2;">#${orderNumber}</strong> a bien été enregistrée.</p>`,
-    extraContentHtml: buildItemsTable(items),
+    bodyHtml: `<p style="margin:0;">Votre paiement a bien été reçu, voici le récapitulatif de votre commande.</p>`,
+    extraContentHtml: buildSummaryBlock(orderNumber, createdAt, shippingAddress) + buildItemsTable(items, total),
     ctaUrl: undefined,
     ctaLabel: undefined,
   });

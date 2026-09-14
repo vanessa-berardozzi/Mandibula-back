@@ -30,10 +30,26 @@ export async function renderEmailLayout(params: EmailLayoutParams): Promise<stri
       <mj-head>
         <mj-title>Mandibula</mj-title>
         <mj-preview>Votre compte Mandibula a été créé</mj-preview>
-         <mj-raw>
-        <meta name="color-scheme" content="light only">
-        <meta name="supported-color-schemes" content="light only">
-      </mj-raw>
+        <mj-raw>
+          <meta name="color-scheme" content="light only">
+          <meta name="supported-color-schemes" content="light only">
+          <style>
+            [data-ogsc] body,
+            [data-ogsc] table,
+            [data-ogsc] td,
+            [data-ogsc] .mandibula-card,
+            [data-ogsc] .mandibula-card table,
+            [data-ogsc] .mandibula-card td,
+            [data-ogsb] body,
+            [data-ogsb] table,
+            [data-ogsb] td,
+            [data-ogsb] .mandibula-card,
+            [data-ogsb] .mandibula-card table,
+            [data-ogsb] .mandibula-card td {
+              background-color: #071109 !important;
+            }
+          </style>
+        </mj-raw>
         <mj-attributes>
           <mj-all font-family="Arial, Helvetica, sans-serif" />
           <mj-text color="#ebf1ec" font-size="15px" line-height="1.7" padding="0" />
@@ -45,10 +61,18 @@ export async function renderEmailLayout(params: EmailLayoutParams): Promise<stri
           .mandibula-kicker div { color: #70f18b; font-family: Courier New, monospace; font-size: 11px; font-weight: 900; letter-spacing: 0.24em; text-transform: uppercase; }
           .mandibula-body p { margin: 0; }
           .mandibula-body p + p { margin-top: 12px; }
+          [data-ogsc] .mandibula-title div,
+          [data-ogsc] .mandibula-kicker div,
+          [data-ogsc] .mandibula-body p,
+          [data-ogsb] .mandibula-title div,
+          [data-ogsb] .mandibula-kicker div,
+          [data-ogsb] .mandibula-body p { color: #ebf1ec !important; }
+          [data-ogsc] .mandibula-card,
+          [data-ogsb] .mandibula-card { background-color: #071109 !important; }
         </mj-style>
       </mj-head>
       <mj-body background-color="#070a08" width="560px">
-        <mj-wrapper css-class="mandibula-card" background-color="#070a08" padding="0">
+        <mj-wrapper css-class="mandibula-card" background-color="#071109" padding="0">
           <mj-section background-url="${jungleUrl}" background-size="cover" background-position="center" padding="0" border="0">
             <mj-column padding="40px 40px 28px">
               <mj-image href="${siteUrl}" src="${logoUrl}" alt="Mandibula" width="200px" padding="0" />

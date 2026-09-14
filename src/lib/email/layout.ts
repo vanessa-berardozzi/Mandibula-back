@@ -32,10 +32,19 @@ export function renderEmailLayout(params: EmailLayoutParams): string {
         <td align="center">
           <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background-color:#0d120e;border:1px solid rgba(112,241,139,0.35);border-radius:16px;overflow:hidden;">
             <tr>
-              <td align="center" bgcolor="#0a120c" background="${jungleUrl}" style="background-image:url('${jungleUrl}');background-position:center 40%;background-size:cover;background-repeat:no-repeat;background-color:#0a120c;padding:44px 40px 32px;border-bottom:1px solid rgba(112,241,139,0.35);">
-                <a href="${siteUrl}" style="text-decoration:none;">
-                  <img src="${logoUrl}" alt="Mandibula" width="200" style="display:block;max-width:200px;width:100%;height:auto;margin:0 auto;" />
-                </a>
+              <td style="border-bottom:1px solid rgba(112,241,139,0.35);">
+                <div style="position:relative;background-color:#0a120c;line-height:0;">
+                  <img src="${jungleUrl}" width="560" alt="" style="display:block;width:100%;max-width:560px;height:auto;filter:brightness(0.45) saturate(1.2) contrast(1.05);-webkit-filter:brightness(0.45) saturate(1.2) contrast(1.05);" />
+                  <table role="presentation" width="100%" height="100%" cellpadding="0" cellspacing="0" style="position:absolute;top:0;left:0;">
+                    <tr>
+                      <td align="center" valign="middle" style="padding:44px 40px;">
+                        <a href="${siteUrl}" style="text-decoration:none;">
+                          <img src="${logoUrl}" alt="Mandibula" width="200" style="display:block;max-width:200px;width:100%;height:auto;margin:0 auto;" />
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                </div>
               </td>
             </tr>
             <tr>

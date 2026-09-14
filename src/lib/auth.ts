@@ -1,6 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
-import { buildAccountConfirmationEmail, sendEmail } from './email';
+import { buildAccountConfirmationEmail, sendEmail } from './email/index';
 import { prisma } from './prisma';
 /**
  * Configuration Better Auth
@@ -46,7 +46,7 @@ export const auth = betterAuth({
         sendVerificationEmail: async ({ user, url }, request) => {
             void sendEmail({
                 to: user.email,
-                ...buildAccountConfirmationEmail({ verificationUrl: url }),
+                ...(await buildAccountConfirmationEmail({ verificationUrl: url })),
             })
         },
         sendOnSignIn: true,
@@ -60,7 +60,7 @@ export const auth = betterAuth({
           if (ctx?.path === '/callback/:id') {
             void sendEmail({
               to: user.email,
-              ...buildAccountConfirmationEmail({}),
+              ...(await buildAccountConfirmationEmail({})),
             });
           }
         },

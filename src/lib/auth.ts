@@ -1,6 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
-import { sendEmail } from './email';
+import { buildAccountConfirmationEmail, sendEmail } from './email';
 import { prisma } from './prisma';
 /**
  * Configuration Better Auth
@@ -43,19 +43,30 @@ export const auth = betterAuth({
 
  emailVerification: {
         autoSignInAfterVerification: true,
-        sendVerificationEmail: async ({ user, url, token }, request) => {
+        sendVerificationEmail: async ({ user, url }, request) => {
             void sendEmail({
                 to: user.email,
-                subject: 'mail Verification',
-                text: `Click the link to verify your email: ${url}`
+                ...buildAccountConfirmationEmail({ verificationUrl: url }),
             })
         },
         sendOnSignIn: true,
     },
-  
 
-
-
+  // Envoie le même mail de confirmation de création de compte pour les inscriptions via OAuth (Google, Discord...)
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user, ctx) => {
+          if (ctx?.path === '/callback/:id') {
+            void sendEmail({
+              to: user.email,
+              ...buildAccountConfirmationEmail({}),
+            });
+          }
+        },
+      },
+    },
+  },
 
   // Liaison automatique des comptes sociaux avec le même email
   account: {

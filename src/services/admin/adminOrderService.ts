@@ -80,6 +80,10 @@ export const orderInclude = {
 
 export type OrderWithRelations = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
 
+function getShippingCustomerName(order: OrderWithRelations): string {
+  return order.shippingAddress?.split(/\r?\n/)[0]?.trim() || order.user.name;
+}
+
 export function toListItem(order: OrderWithRelations): AdminOrderListItem {
   const items = order.orderItems.map((item) => ({
     id: item.id,
@@ -105,7 +109,7 @@ export function toListItem(order: OrderWithRelations): AdminOrderListItem {
     // Order n'a pas de numéro dédié : on dérive une référence lisible de l'uuid
     reference: order.id.slice(0, 8).toUpperCase(),
     createdAt: order.createdAt.toISOString(),
-    customerName: order.user.name,
+    customerName: getShippingCustomerName(order),
     customerEmail: order.user.email,
     total: Number(order.total),
     status: order.status as AdminOrderStatus,

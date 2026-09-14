@@ -30,6 +30,10 @@ export async function renderEmailLayout(params: EmailLayoutParams): Promise<stri
       <mj-head>
         <mj-title>Mandibula</mj-title>
         <mj-preview>Votre compte Mandibula a été créé</mj-preview>
+         <mj-raw>
+        <meta name="color-scheme" content="light only">
+        <meta name="supported-color-schemes" content="light only">
+      </mj-raw>
         <mj-attributes>
           <mj-all font-family="Arial, Helvetica, sans-serif" />
           <mj-text color="#ebf1ec" font-size="15px" line-height="1.7" padding="0" />

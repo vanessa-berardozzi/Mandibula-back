@@ -18,13 +18,12 @@ interface SendEmailOptions {
  */
 function renderEmailLayout(params: { title: string; bodyHtml: string; ctaUrl?: string; ctaLabel?: string }): string {
   const { title, bodyHtml, ctaUrl, ctaLabel } = params;
-  const siteUrl = process.env.FRONTEND_URL || 'https://mandibula.com';
+  const siteUrl = process.env.FRONTEND_URL || 'https://mandibula.lu';
   // Les images doivent être servies sur une URL publique : en local, FRONTEND_URL pointe vers
   // localhost (injoignable par Gmail/Resend), donc on retombe sur EMAIL_ASSETS_URL ou le domaine de staging.
   const assetsUrl = process.env.EMAIL_ASSETS_URL || (siteUrl.includes('localhost') ? 'https://dev.mandibula.lu' : siteUrl);
   const logoUrl = `${assetsUrl}/mandibula-logo.png`;
   const jungleUrl = `${assetsUrl}/mandibula-jungle.png`;
-  const topoUrl = `${assetsUrl}/topographic-neon.png`;
   const cta = ctaUrl
     ? `<tr><td align="center" style="padding:32px 0 8px;">
          <a href="${ctaUrl}" style="display:inline-block;background:#70f18b;color:#071309;font-weight:700;font-size:16px;text-decoration:none;padding:16px 36px;border-radius:8px;">${ctaLabel ?? 'Confirmer'}</a>
@@ -45,7 +44,7 @@ function renderEmailLayout(params: { title: string; bodyHtml: string; ctaUrl?: s
               </td>
             </tr>
             <tr>
-              <td bgcolor="#0d120e" style="background:url('${topoUrl}') 108% -10% / 55% auto no-repeat, #0d120e;">
+              <td bgcolor="#0d120e" style="background:url('${jungleUrl}') 108% -10% / 55% auto no-repeat, #0d120e;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                   <tr>
                     <td align="center" style="padding:36px 40px 0;">

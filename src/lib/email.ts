@@ -60,7 +60,7 @@ function renderEmailLayout(params: { title: string; bodyHtml: string; ctaUrl?: s
                   <tr><td>${cta}</td></tr>
                   <tr>
                     <td align="center" style="padding:40px 40px 32px;">
-                      <a href="${siteUrl}" style="color:#70f18b;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;text-decoration:none;">Visiter mandibula.com →</a>
+                      <a href="${siteUrl}" style="color:#70f18b;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;text-decoration:none;">Visiter mandibula.lu →</a>
                     </td>
                   </tr>
                 </table>

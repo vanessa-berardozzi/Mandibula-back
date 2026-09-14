@@ -1,7 +1,8 @@
 /**
- * Habillage HTML commun à tous les emails, repris de la DA homepage (bandeau jungle assombri,
+ * Habillage HTML commun à tous les emails, repris de la DA homepage (fond quasi-noir du site,
  * kicker mono vert façon `.eyebrow`, titre condensé façon `.kinetic-title`), pour un rendu
- * cohérent avec mandibula-front.
+ * cohérent avec mandibula-front. Pas d'image de fond ni de superposition CSS : trop peu fiable
+ * selon les clients mail, on reste sur des couleurs plates.
  */
 export interface EmailLayoutParams {
   kicker: string;
@@ -18,7 +19,6 @@ export function renderEmailLayout(params: EmailLayoutParams): string {
   // localhost (injoignable par Gmail/Resend), donc on retombe sur EMAIL_ASSETS_URL ou le domaine de staging.
   const assetsUrl = process.env.EMAIL_ASSETS_URL || (siteUrl.includes('localhost') ? 'https://dev.mandibula.lu' : siteUrl);
   const logoUrl = `${assetsUrl}/mandibula-logo.png`;
-  const jungleUrl = `${assetsUrl}/mandibula-jungle.png`;
   const cta = ctaUrl
     ? `<tr><td align="center" style="padding:32px 0 8px;">
          <a href="${ctaUrl}" style="display:inline-block;background:#70f18b;color:#071309;font-weight:700;font-size:16px;text-decoration:none;padding:16px 36px;border-radius:8px;">${ctaLabel ?? 'Confirmer'}</a>
@@ -30,25 +30,16 @@ export function renderEmailLayout(params: EmailLayoutParams): string {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#070a08;padding:40px 16px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background-color:#0d120e;border:1px solid rgba(112,241,139,0.35);border-radius:16px;overflow:hidden;">
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background-color:#070a08;border:1px solid rgba(112,241,139,0.35);border-radius:16px;overflow:hidden;">
             <tr>
-              <td style="border-bottom:1px solid rgba(112,241,139,0.35);">
-                <div style="position:relative;background-color:#0a120c;line-height:0;">
-                  <img src="${jungleUrl}" width="560" alt="" style="display:block;width:100%;max-width:560px;height:auto;filter:brightness(0.45) saturate(1.2) contrast(1.05);-webkit-filter:brightness(0.45) saturate(1.2) contrast(1.05);" />
-                  <table role="presentation" width="100%" height="100%" cellpadding="0" cellspacing="0" style="position:absolute;top:0;left:0;">
-                    <tr>
-                      <td align="center" valign="middle" style="padding:44px 40px;">
-                        <a href="${siteUrl}" style="text-decoration:none;">
-                          <img src="${logoUrl}" alt="Mandibula" width="200" style="display:block;max-width:200px;width:100%;height:auto;margin:0 auto;" />
-                        </a>
-                      </td>
-                    </tr>
-                  </table>
-                </div>
+              <td bgcolor="#070a08" align="center" style="background-color:#070a08;border-bottom:1px solid rgba(112,241,139,0.35);padding:36px 40px;">
+                <a href="${siteUrl}" style="text-decoration:none;">
+                  <img src="${logoUrl}" alt="Mandibula" width="200" style="display:block;max-width:200px;width:100%;height:auto;margin:0 auto;" />
+                </a>
               </td>
             </tr>
             <tr>
-              <td bgcolor="#0d120e" style="background-color:#0d120e;">
+              <td bgcolor="#070a08" style="background-color:#070a08;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                   <tr>
                     <td align="center" style="padding:36px 40px 0;">
@@ -71,7 +62,7 @@ export function renderEmailLayout(params: EmailLayoutParams): string {
               </td>
             </tr>
             <tr>
-              <td style="padding:24px 40px 32px;border-top:1px solid #1c2620;background-color:#0d120e;">
+              <td bgcolor="#070a08" style="padding:24px 40px 32px;border-top:1px solid #1c2620;background-color:#070a08;">
                 <p style="color:#6b756f;font-size:12px;margin:0;">Vous recevez cet email suite à une action sur votre compte Mandibula. Si vous n'êtes pas à l'origine de cette action, ignorez ce message.</p>
               </td>
             </tr>

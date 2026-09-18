@@ -36,6 +36,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "http-errors": "~1.6.3",
+    "libphonenumber-js": "^1.13.13",
     "mjml": "^5.4.1",
     "multer": "^2.2.0",
     "resend": "^6.6.0",

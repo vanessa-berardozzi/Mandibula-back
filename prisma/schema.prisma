@@ -75,6 +75,12 @@ enum PromotionType {
   FIXED_AMOUNT
 }
 
+enum AddressType {
+  SHIPPING
+  BILLING
+  BOTH
+}
+
 /// Catégorie fiscale d'un produit. À faire correspondre à vos vraies
 /// catégories métier (un arthropode vivant et une boîte d'élevage n'ont
 /// pas forcément le même taux selon le pays de destination).
@@ -179,6 +185,8 @@ model Adress {
 
   name       String?
   fullName   String?
+  phone      String?
+  type       AddressType @default(BOTH)
   street     String
   city       String
   postalCode String

@@ -4,28 +4,39 @@ import { prisma } from '../lib/prisma';
 import { CartService } from '../services/cartService';
 import { calculateVat } from '../services/vat/vatCalculationService';
 import { calculateDiscountedPrice } from '../utils/pricing';
+import { isValidPhoneForCountry } from '../validations/addressSchemas';
 
 // Validation du body pour créer une commande
-const createOrderSchema = z.object({
-  items: z
-    .array(
-      z.object({
-        variantId: z.string().uuid(),
-        quantity: z.number().int().positive(),
-      })
-    )
-    .min(1, 'Le panier ne peut pas être vide'),
-  paymentMethod: z.enum(['SUM_UP', 'PAYPAL', 'BANK_TRANSFER', 'CASH']),
-  shippingAddress: z.string().optional(),
-  shippingCountryCode: z.string().length(2), // ← NOUVEAU, obligatoire
-  billingAddress: z.string().optional(),
-  notes: z.string().optional(),
-  promoCode: z.string().optional(),
-  customerEmail: z.string().email().optional(),
-  customerPhone: z.string().optional(),
-  // Pour plus tard, si vous gérez le B2B :
-  // vatNumber: z.string().optional(),
-});
+const createOrderSchema = z
+  .object({
+    items: z
+      .array(
+        z.object({
+          variantId: z.string().uuid(),
+          quantity: z.number().int().positive(),
+        })
+      )
+      .min(1, 'Le panier ne peut pas être vide'),
+    paymentMethod: z.enum(['SUM_UP', 'PAYPAL', 'BANK_TRANSFER', 'CASH']),
+    shippingAddress: z.string().optional(),
+    shippingCountryCode: z.string().length(2), // ← NOUVEAU, obligatoire
+    billingAddress: z.string().optional(),
+    notes: z.string().optional(),
+    promoCode: z.string().optional(),
+    customerEmail: z.string().email().optional(),
+    customerPhone: z.string().optional(),
+    // Pour plus tard, si vous gérez le B2B :
+    // vatNumber: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.customerPhone && !isValidPhoneForCountry(data.customerPhone, data.shippingCountryCode)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['customerPhone'],
+        message: `Numéro de téléphone invalide pour le pays ${data.shippingCountryCode}`,
+      });
+    }
+  });
 
 type CreateOrderInput = z.infer<typeof createOrderSchema>;
 

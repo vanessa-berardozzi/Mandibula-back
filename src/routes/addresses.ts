@@ -1,6 +1,7 @@
 import { Request, Response, Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { authMiddleware } from '../middleware/auth';
+import { addressSchema, isValidPhoneForCountry, isValidPostalCodeForCountry, updateAddressSchema } from '../validations/addressSchemas';
 
 const router = Router();
 
@@ -40,12 +41,13 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const { street, city, postalCode, country, name, fullName } = req.body;
-
-    if (!street || !city || !postalCode || !country) {
-      res.status(400).json({ error: 'Champs obligatoires manquants (rue, ville, code postal, pays)' });
+    const parsed = addressSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Champs invalides', issues: parsed.error.issues });
       return;
     }
+
+    const { street, city, postalCode, country, name, fullName, phone, type } = parsed.data;
 
     const address = await prisma.adress.create({
       data: {
@@ -56,6 +58,8 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
         country,
         name: name || undefined,
         fullName: fullName || undefined,
+        phone: phone || undefined,
+        type,
       },
     });
 
@@ -79,7 +83,11 @@ router.put('/:addressId', authMiddleware, async (req: Request, res: Response): P
     }
 
     const { addressId } = req.params;
-    const { street, city, postalCode, country, name, fullName } = req.body;
+    const parsed = updateAddressSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Champs invalides', issues: parsed.error.issues });
+      return;
+    }
 
     // Vérifier que l'adresse appartient à l'utilisateur
     const existingAddress = await prisma.adress.findUnique({
@@ -88,6 +96,21 @@ router.put('/:addressId', authMiddleware, async (req: Request, res: Response): P
 
     if (!existingAddress || existingAddress.userId !== userId) {
       res.status(403).json({ error: 'Accès non autorisé' });
+      return;
+    }
+
+    // Revalide le téléphone/code postal avec le pays final (nouveau ou existant)
+    const { street, city, postalCode, country, name, fullName, phone, type } = parsed.data;
+    const finalCountry = country ?? existingAddress.country;
+    const finalPostalCode = postalCode ?? existingAddress.postalCode;
+    const finalPhone = phone ?? existingAddress.phone ?? undefined;
+
+    if (!isValidPostalCodeForCountry(finalPostalCode, finalCountry)) {
+      res.status(400).json({ error: `Format de code postal invalide pour le pays ${finalCountry}` });
+      return;
+    }
+    if (finalPhone && !isValidPhoneForCountry(finalPhone, finalCountry)) {
+      res.status(400).json({ error: `Numéro de téléphone invalide pour le pays ${finalCountry}` });
       return;
     }
 
@@ -100,6 +123,8 @@ router.put('/:addressId', authMiddleware, async (req: Request, res: Response): P
         ...(country && { country }),
         ...(name !== undefined && { name }),
         ...(fullName !== undefined && { fullName }),
+        ...(phone !== undefined && { phone: phone || null }),
+        ...(type !== undefined && { type }),
       },
     });
 

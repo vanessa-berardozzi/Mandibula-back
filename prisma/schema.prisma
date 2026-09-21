@@ -550,3 +550,96 @@ model SiteBanner {
 
   @@map("site_banner")
 }
+
+// ─────────────────────────────────────────────────────────────
+// GUIDES (Mandibula Academy)
+// ─────────────────────────────────────────────────────────────
+
+/// Guide d'élevage éditorial. Toutes les parties variables sont relationnelles
+/// et ordonnées par `position` pour permettre une édition depuis l'admin.
+model Guide {
+  id          String  @id @default(uuid())
+  slug        String  @unique
+  title       String
+  /// Libellé de catégorie éditoriale ("Bien débuter", "Techniques d'élevage"…)
+  category    String
+  summary     String
+  /// Ex: "14 min"
+  readingTime String
+  /// "Débutant" | "Intermédiaire" | "Avancé"
+  level       String
+  intro       String
+
+  /// Bloc "Fiche récapitulative"
+  recapSummary String?
+  recapPoints  String[] @default([])
+
+  isPublished Boolean @default(true)
+  /// Ordre d'affichage dans la bibliothèque
+  position    Int     @default(0)
+
+  sections GuideSection[]
+  sources  GuideSource[]
+  facts    GuideFact[]
+  visuals  GuideVisual[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isPublished, position])
+  @@index([category])
+  @@map("guides")
+}
+
+model GuideSection {
+  id         String   @id @default(uuid())
+  guideId    String
+  guide      Guide    @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  position   Int
+  title      String
+  paragraphs String[] @default([])
+  bullets    String[] @default([])
+  warning    String?
+
+  @@unique([guideId, position])
+  @@map("guide_sections")
+}
+
+model GuideSource {
+  id       String @id @default(uuid())
+  guideId  String
+  guide    Guide  @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  position Int
+  label    String
+  href     String
+
+  @@unique([guideId, position])
+  @@map("guide_sources")
+}
+
+/// Statistique de la grille "Fiche récapitulative" (ex: Substrat / 6–10 cm / point de départ)
+model GuideFact {
+  id       String  @id @default(uuid())
+  guideId  String
+  guide    Guide   @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  position Int
+  label    String
+  value    String
+  note     String?
+
+  @@unique([guideId, position])
+  @@map("guide_facts")
+}
+
+model GuideVisual {
+  id       String  @id @default(uuid())
+  guideId  String
+  guide    Guide   @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  position Int
+  src      String
+  alt      String
+  caption  String?
+
+  @@unique([guideId, position])
+  @@map("guide_visuals")
+}

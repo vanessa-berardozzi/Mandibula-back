@@ -7,6 +7,7 @@ import authRouter from './routes/auth';
 import bannerRouter from './routes/banner';
 import cartRouter from './routes/cart';
 import checkoutRouter from './routes/checkout';
+import guidesRouter from './routes/guides';
 import indexRouter from './routes/index';
 import ordersRouter from './routes/orders';
 import productsRouter from './routes/products';
@@ -81,6 +82,7 @@ app.use('/api/upload', uploadRouter);       // Upload fichiers vers Cloudinary (
 app.use('/api/wishlist', wishlistRouter);   // Routes favoris (protégées par authMiddleware)
 app.use('/api/vat', vatRouter);             // Routes VAT (publiques)
 app.use('/api/banner', bannerRouter);       // Bandeau d'information du site (public)
+app.use('/api/guides', guidesRouter);       // Guides d'élevage (publics)
 app.use(vatErrorHandler);
 
 

@@ -53,6 +53,8 @@ export class AdminPromotionService {
     return promotions.map((p) => {
       const usersById = new Map<string, { id: string; name: string; email: string; orderCount: number }>();
       for (const order of p.orders) {
+        // Commande invité ou utilisateur supprimé : userId est nullable (onDelete: SetNull)
+        if (!order.user) continue;
         const user = usersById.get(order.user.id);
         if (user) {
           user.orderCount += 1;

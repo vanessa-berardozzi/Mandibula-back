@@ -56,9 +56,9 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
         city,
         postalCode,
         country,
-        firstName: firstName || undefined,
-        lastName: lastName || undefined,
-        phone: phone || undefined,
+        firstName,
+        lastName,
+        phone,
         type,
       },
     });

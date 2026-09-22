@@ -103,6 +103,7 @@ export class AdminCustomerService {
 
     const ordersByUser = new Map<string, AdminOrderListItem[]>();
     for (const order of orders) {
+      if (!order.userId) continue;
       const list = ordersByUser.get(order.userId) ?? [];
       list.push(toListItem(order));
       ordersByUser.set(order.userId, list);

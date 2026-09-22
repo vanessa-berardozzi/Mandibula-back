@@ -80,8 +80,16 @@ export const orderInclude = {
 
 export type OrderWithRelations = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
 
+/** Les adresses sont stockées en Json (texte formaté ou objet structuré selon l'origine) */
+function addressToDisplayString(value: Prisma.JsonValue | null | undefined): string | null {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') return JSON.stringify(value);
+  return null;
+}
+
 function getShippingCustomerName(order: OrderWithRelations): string {
-  return order.shippingAddress?.split(/\r?\n/)[0]?.trim() || order.user.name;
+  const shippingAddress = addressToDisplayString(order.shippingAddress);
+  return shippingAddress?.split(/\r?\n/)[0]?.trim() || order.user?.name || 'Client supprimé';
 }
 
 export function toListItem(order: OrderWithRelations): AdminOrderListItem {
@@ -110,7 +118,7 @@ export function toListItem(order: OrderWithRelations): AdminOrderListItem {
     reference: order.id.slice(0, 8).toUpperCase(),
     createdAt: order.createdAt.toISOString(),
     customerName: getShippingCustomerName(order),
-    customerEmail: order.user.email,
+    customerEmail: order.user?.email ?? 'inconnu',
     total: Number(order.total),
     status: order.status as AdminOrderStatus,
     paymentStatus: order.paymentStatus,
@@ -127,8 +135,8 @@ function toDetail(order: OrderWithRelations): AdminOrderDetail {
     subtotal: Number(order.subtotal),
     shippingCost: Number(order.shippingCost),
     tax: order.tax === null ? null : Number(order.tax),
-    billingAddress: order.billingAddress,
-    shippingAddress: order.shippingAddress,
+    billingAddress: addressToDisplayString(order.billingAddress),
+    shippingAddress: addressToDisplayString(order.shippingAddress),
     notes: order.notes,
   };
 }

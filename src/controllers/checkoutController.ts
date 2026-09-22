@@ -49,15 +49,18 @@ async function sendOrderConfirmationEmail(orderId: string): Promise<void> {
     },
   });
 
-  if (!order) return;
+  if (!order || !order.user) return;
 
   const { subject, text, html } = await buildOrderConfirmationEmail({
     orderNumber: order.id.slice(0, 8).toUpperCase(),
     createdAt: order.createdAt,
     total: Number(order.total),
-    shippingAddress: order.shippingAddress,
+    shippingAddress:
+      typeof order.shippingAddress === "string"
+        ? order.shippingAddress
+        : JSON.stringify(order.shippingAddress),
     items: order.orderItems.map((item) => ({
-      name: item.variant.product.name,
+      name: item.variant.product.name,  
       variantName: item.variantName,
       quantity: item.quantity,
       price: Number(item.price),
@@ -65,7 +68,14 @@ async function sendOrderConfirmationEmail(orderId: string): Promise<void> {
     })),
   });
 
-  await sendEmail({ to: order.user.email, subject, text, html });
+  if (order.user.email == null) return;
+
+  await sendEmail({
+    to: String(order.user.email),
+    subject,
+    text,
+    html,
+  });
 }
 
 /**
@@ -201,9 +211,11 @@ export class CheckoutController {
 
       if (webhookResult.paymentStatus === 'PAID') {
         await confirmPayment(orderId, 'Payment confirmed');
-        await CartService.clearCart(order.userId).catch((err) =>
-          console.error('[Webhook] Erreur vidage panier:', err)
-        );
+        if (order.userId) {
+          await CartService.clearCart(order.userId).catch((err) =>
+            console.error('[Webhook] Erreur vidage panier:', err)
+          );
+        }
         console.log('[Webhook] Paiement confirmé, stock mis à jour, panier vidé:', orderId);
       } else {
         await cancelPayment(orderId, `Payment ${webhookResult.paymentStatus}`);

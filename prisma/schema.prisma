@@ -103,7 +103,9 @@ model User {
   id             String    @id @default(cuid())
   email          String    @unique
   emailVerified  Boolean   @default(false)
-  name           String    
+  name           String    //Display name
+  firstName      String?
+  lastName       String?
   image          String? 
   pictureProfile String?
   lastConnection DateTime  @default(now())
@@ -181,19 +183,24 @@ model rateLimit {
 model Adress {
   id     String @id @default(uuid())
   userId String
-  user   User   @relation(fields: [userId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  name       String?
-  fullName   String?
-  phone      String?
-  type       AddressType @default(BOTH)
-  street     String
-  city       String
-  postalCode String
-  country    String
+  firstName   String
+  lastName    String
+  companyName String?      // prêt pour B2B, non utilisé pour l'instant
+  vatNumber   String?      // prêt pour B2B, non utilisé pour l'instant
+  phone       String?
+  type        AddressType  @default(BOTH)
+  street      String
+  city        String
+  postalCode  String
+  country     String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("adress")
 }
 
 // Catalog and stock
@@ -324,32 +331,29 @@ model StockMovement {
 
 model Order {
   id     String @id @default(uuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   status        OrderStatus   @default(PENDING)
   paymentStatus PaymentStatus @default(PENDING)
   paymentMethod PaymentMethod
 
-  vatRegime  String // "DOMESTIC3 | "EU_B2B_DESTINATION ...
-  vatDetailsJson Json  
+  vatRegime      String
+  vatDetailsJson Json
 
-  // Référence de transaction retournée par SumUp après paiement
   sumupCheckoutId String? @unique
 
-  subtotal     Decimal  @db.Decimal(10, 2) // Total produits HT
+  subtotal     Decimal  @db.Decimal(10, 2)
   shippingCost Decimal  @default(0) @db.Decimal(10, 2)
   tax          Decimal? @db.Decimal(10, 2)
-  total        Decimal  @db.Decimal(10, 2) // subtotal + shippingCost + tax
+  total        Decimal  @db.Decimal(10, 2)
 
-  billingAddress  String?
-  shippingAddress String?
+  // Snapshot figé au moment de la commande — indépendant d'Adress/User
+  billingAddress  Json?
+  shippingAddress Json?
 
-  // Instructions spéciales (ex: "expédition vivant", "retrait sur place")
   notes String?
 
-  // Si le paiement n'est pas confirmé avant cette date, un job libère
-  // le stock réservé (StockMovement RESERVATION_RELEASE) et peut annuler la commande.
   reservationExpiresAt DateTime?
 
   createdAt DateTime @default(now())
@@ -362,8 +366,8 @@ model Order {
   promotionId    String?
   promotion      Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
 
-  @@index([userId, paymentStatus]) // ← Pour lister les commandes actives d'un user
-  @@index([paymentStatus, createdAt]) // ← Pour dashboard/analytics
+  @@index([userId, paymentStatus])
+  @@index([paymentStatus, createdAt])
   @@index([promotionId])
 }
 
@@ -446,15 +450,21 @@ model Wishlist {
   @@map("wishlist")
 }
 
-// Invoicing
-// Numérotation séquentielle SANS TROU distincte du n° de commande (exigence légale LU/UE)
 
 model Invoice {
   id            String   @id @default(cuid())
   orderId       String   @unique
   order         Order    @relation(fields: [orderId], references: [id])
-  invoiceNumber String   @unique // ex: généré via une séquence Postgres dédiée
+  invoiceNumber String   @unique
   issuedAt      DateTime @default(now())
+
+  // Snapshot acheteur — copié depuis Order au moment de l'émission, jamais retouché ensuite
+  buyerName      String
+  buyerAddress   Json
+  buyerVatNumber String?
+
+  vatRegime      String
+  vatDetailsJson Json
 
   totalHT  Decimal @db.Decimal(10, 2)
   totalVAT Decimal @db.Decimal(10, 2)

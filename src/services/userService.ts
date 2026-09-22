@@ -64,11 +64,13 @@ export class UserService {
   // ==================== DELETE (Suppression) ====================
   
   /**
-   * Supprimer un utilisateur (cascade automatique sur sessions/accounts)
+   * Supprimer un utilisateur 
    */
-  static async deleteUser(id: string): Promise<void> {
-    await prisma.user.delete({
+static async deleteUser(id: string): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.user.delete({
       where: { id },
     });
-  }
+  });
+}
 }

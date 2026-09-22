@@ -22,6 +22,8 @@
     "prisma:db:seed:staging": "dotenv -e .env.staging -- prisma db seed",
     "prisma:seed:guides": "tsx prisma/seed/guides.seed.ts",
     "prisma:seed:guides:staging": "dotenv -e .env.staging -- tsx prisma/seed/guides.seed.ts",
+    "prisma:seed:vatrates": "tsx prisma/seed/vatrates.seed.ts",
+    "prisma:seed:vatrates:staging": "dotenv -e .env.staging -- tsx prisma/seed/vatrates.seed.ts",
     "prisma:studio": "prisma studio",
     "prisma:studio:staging": "dotenv -e .env.staging -- prisma studio",
     "prisma:studio:prod": "dotenv -e .env.production -- prisma studio",

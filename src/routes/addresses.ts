@@ -47,7 +47,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const { street, city, postalCode, country, name, fullName, phone, type } = parsed.data;
+    const { street, city, postalCode, country,firstName, lastName, phone, type } = parsed.data;
 
     const address = await prisma.adress.create({
       data: {
@@ -56,8 +56,8 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
         city,
         postalCode,
         country,
-        name: name || undefined,
-        fullName: fullName || undefined,
+        firstName: firstName || undefined,
+        lastName: lastName || undefined,
         phone: phone || undefined,
         type,
       },
@@ -100,7 +100,7 @@ router.put('/:addressId', authMiddleware, async (req: Request, res: Response): P
     }
 
     // Revalide le téléphone/code postal avec le pays final (nouveau ou existant)
-    const { street, city, postalCode, country, name, fullName, phone, type } = parsed.data;
+    const { street, city, postalCode, country, firstName, lastName, phone, type } = parsed.data;
     const finalCountry = country ?? existingAddress.country;
     const finalPostalCode = postalCode ?? existingAddress.postalCode;
     const finalPhone = phone ?? existingAddress.phone ?? undefined;
@@ -121,8 +121,8 @@ router.put('/:addressId', authMiddleware, async (req: Request, res: Response): P
         ...(city && { city }),
         ...(postalCode && { postalCode }),
         ...(country && { country }),
-        ...(name !== undefined && { name }),
-        ...(fullName !== undefined && { fullName }),
+        ...(firstName !== undefined && { firstName }),
+        ...(lastName !== undefined && { lastName }),
         ...(phone !== undefined && { phone: phone || null }),
         ...(type !== undefined && { type }),
       },

@@ -1,3 +1,4 @@
+// address.schema.ts
 import { isValidPhoneNumber } from 'libphonenumber-js';
 import { z } from 'zod';
 
@@ -54,11 +55,18 @@ export function isValidPhoneForCountry(phone: string, countryCode: string): bool
   return isValidPhoneNumber(phone, countryCode.toUpperCase() as never);
 }
 
-const addressBaseSchema = z.object({
-  name: z.string().trim().max(100).optional(),
-  fullName: z.string().trim().max(150).optional(),
-  // Usage prévu de l'adresse : livraison, facturation, ou les deux
-  type: z.enum(['SHIPPING', 'BILLING', 'BOTH']).optional().default('BOTH'),
+/**
+ * Champs communs à une adresse "formulaire" (Adress en DB) et à un snapshot
+ * figé (Order.billingAddress, Order.shippingAddress, Invoice.buyerAddress).
+ * Ne contient PAS `type` : ce champ n'a de sens que pour une Adress vivante
+ * (SHIPPING/BILLING/BOTH), pas pour un snapshot où le contexte est déjà
+ * porté par le nom de la colonne (billingAddress vs shippingAddress).
+ */
+const addressCoreSchema = z.object({
+  firstName: z.string().trim().min(1, 'Le prénom est obligatoire').max(100),
+  lastName: z.string().trim().min(1, 'Le nom est obligatoire').max(100),
+  companyName: z.string().trim().max(150).optional().or(z.literal('')),
+  vatNumber: z.string().trim().max(30).optional().or(z.literal('')),
   street: z.string().trim().min(1, 'La rue est obligatoire').max(200),
   city: z.string().trim().min(1, 'La ville est obligatoire').max(100),
   // ISO 3166-1 alpha-2 (ex: FR, BE, US)
@@ -71,7 +79,14 @@ const addressBaseSchema = z.object({
   phone: z.string().trim().max(30).optional().or(z.literal('')),
 });
 
-export const addressSchema = addressBaseSchema.superRefine((data, ctx) => {
+type AddressCore = z.infer<typeof addressCoreSchema>;
+
+/**
+ * Règles de validation métier partagées (code postal + téléphone selon le
+ * pays). Appliquée identiquement partout où une adresse doit être vérifiée,
+ * qu'il s'agisse du formulaire Adress ou d'un snapshot de commande.
+ */
+function applyAddressBusinessRules(data: AddressCore, ctx: z.RefinementCtx): void {
   if (!isValidPostalCodeForCountry(data.postalCode, data.country)) {
     ctx.addIssue({
       code: 'custom',
@@ -87,10 +102,23 @@ export const addressSchema = addressBaseSchema.superRefine((data, ctx) => {
       message: `Numéro de téléphone invalide pour le pays ${data.country}`,
     });
   }
+}
+
+// ── Adress (formulaire utilisateur) ─────────────────────────────────────
+
+const addressBaseSchema = addressCoreSchema.extend({
+  // Usage prévu de l'adresse : livraison, facturation, ou les deux
+  type: z.enum(['SHIPPING', 'BILLING', 'BOTH']).optional().default('BOTH'),
 });
 
+export const addressSchema = addressBaseSchema.superRefine(applyAddressBusinessRules);
+
 export const updateAddressSchema = addressBaseSchema.partial().superRefine((data, ctx) => {
-  if (data.country && data.postalCode && !isValidPostalCodeForCountry(data.postalCode, data.country)) {
+  if (
+    data.country &&
+    data.postalCode &&
+    !isValidPostalCodeForCountry(data.postalCode, data.country)
+  ) {
     ctx.addIssue({
       code: 'custom',
       path: ['postalCode'],
@@ -109,3 +137,15 @@ export const updateAddressSchema = addressBaseSchema.partial().superRefine((data
 
 export type AddressInput = z.infer<typeof addressSchema>;
 export type UpdateAddressInput = z.infer<typeof updateAddressSchema>;
+
+// ── Snapshot figé (Order.billingAddress / shippingAddress, Invoice.buyerAddress) ──
+
+/**
+ * Même validation métier que addressSchema (code postal + téléphone par
+ * pays), mais sans `type`. Utilisée pour valider le Json stocké dans une
+ * commande ou une facture — à l'écriture avec .parse(), à la lecture avec
+ * .safeParse() pour ne jamais faire planter une page sur une vieille donnée.
+ */
+export const addressSnapshotSchema = addressCoreSchema.superRefine(applyAddressBusinessRules);
+
+export type AddressSnapshot = z.infer<typeof addressSnapshotSchema>;

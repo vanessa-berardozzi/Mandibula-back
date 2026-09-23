@@ -28,11 +28,13 @@ export interface AnimalAttributes {
 /** Attributs pour les produits non-vivants (accessoires, nourriture, substrats, kits…) */
 export interface AccessoireAttributes {
   type: 'accessoire';
-  caracteristiques: string[];  // Points forts / descriptif du produit
-  contenu?: string[];           // Pour les kits/packs : liste du contenu
-  dimensions?: string;          // "30x20x15 cm"
-  poids?: string;               // "500 g"
-  volume?: string;              // "5 L"
+  caracteristiques: string[]; // Points forts / descriptif du produit
+  contenu?: string[]; // Pour les kits/packs : liste du contenu
+  dimensions?: string; // "30x20x15 cm"
+  poids?: string; // "500 g"
+  volume?: string; // "5 L"
+
+  presentationType?: 'boost' | 'pack' | 'substrat' | 'bijou' | 'alimentation';
 }
 
 export type ProductAttributes = AnimalAttributes | AccessoireAttributes;

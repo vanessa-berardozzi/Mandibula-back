@@ -69,6 +69,12 @@ const CATEGORY_MAP: Record<string, CategoryMapping> = {
   'substrats':       { rootName: 'Non-vivant',      rootSlug: 'non-vivant',      subName: 'Substrats',       subSlug: 'substrats',        isAnimal: false },
 };
 
+type PresentationType = 'boost' | 'pack' | 'substrat' | 'bijou';
+
+const PRESENTATION_OVERRIDES: Record<string, PresentationType> = {
+  'b498bc1a-16cd-4294-8dbd-1258afefdfba': 'boost',
+};
+
 const DEFAULT_CATEGORY: CategoryMapping = {
   rootName: 'Non-vivant', rootSlug: 'non-vivant',
   subName: 'Divers',      subSlug: 'divers',
@@ -442,9 +448,13 @@ async function main() {
     const categoryId = await getOrCreateCategory(mapping);
 
     const descHtml   = product.description || product.seoDescription;
-    const attributes = mapping.isAnimal
-      ? buildAnimalAttributes(descHtml)
-      : buildAccessoireAttributes(descHtml, product.name);
+    const baseAttributes = mapping.isAnimal
+     ? buildAnimalAttributes(descHtml)
+     : buildAccessoireAttributes(descHtml, product.name);
+
+   const presentationType = PRESENTATION_OVERRIDES[product.sumupId.toLowerCase()];
+
+   const attributes = presentationType ? { ...baseAttributes, presentationType } : baseAttributes;
 
     // Prix d'affichage = prix minimum des variantes (hors 0)
     const prices      = product.variants.map(v => v.price).filter(p => p > 0);
